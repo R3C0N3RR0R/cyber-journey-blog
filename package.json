@@ -1,6 +1,7 @@
 {
   "name": "tailwind-nextjs-starter-blog",
   "version": "2.4.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "start": "next dev",
@@ -23,7 +24,7 @@
     "github-slugger": "^2.0.0",
     "gray-matter": "^4.0.2",
     "hast-util-from-html-isomorphic": "^2.0.0",
-    "image-size": "2.0.1",
+    "image-size": "^2.0.2",
     "next": "15.2.4",
     "next-contentlayer2": "0.5.5",
     "next-themes": "^0.4.6",
@@ -43,17 +44,19 @@
     "remark-gfm": "^4.0.0",
     "remark-github-blockquote-alert": "^1.2.1",
     "remark-math": "^6.0.0",
+    "svgo": "2.8.0",
     "tailwindcss": "^4.0.5",
     "unist-util-visit": "^5.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.16.0",
-    "@svgr/webpack": "^8.0.1",
+    "@svgr/webpack": "8.1.0",
     "@types/mdx": "^2.0.12",
     "@types/react": "^19.0.8",
     "@typescript-eslint/eslint-plugin": "^8.12.0",
     "@typescript-eslint/parser": "^8.12.0",
+    "autoprefixer": "^10.4.21",
     "cross-env": "^7.0.3",
     "eslint": "^9.14.0",
     "eslint-config-next": "15.2.4",
