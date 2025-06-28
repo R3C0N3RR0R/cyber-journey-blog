@@ -2,13 +2,13 @@
 const siteMetadata = {
   title: 'My Cyber Blog',
   author: 'R3C0N3RR0R',
-  headerTitle: 'R3C0N3RR0R Cyber Portfolio',
-  description: 'R3C0N3RR0R Cyber Journey',
+  headerTitle: 'R3C0N3RR0R Cyber Journey',
+  description: 'My Cyber Machine Portfolio',
   language: 'en-us',
   theme: 'system', // system, dark or light
   siteUrl: 'https://tailwind-nextjs-starter-blog.vercel.app',
   siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
-  siteLogo: `${process.env.BASE_PATH || ''}/static/images/logo.png`,
+  siteLogo: `${process.env.BASE_PATH || ''}/static/images/avatar_cyber.png`,
   socialBanner: `${process.env.BASE_PATH || ''}/static/images/twitter-card.png`,
   mastodon: 'https://mastodon.social/@mastodonuser',
   email: 'address@yoursite.com',

