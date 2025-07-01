@@ -45,3 +45,12 @@ yarn-error.log*
 
 # Contentlayer
 .contentlayer
+
+.devcontainer
+.github
+.husky
+.next
+.vscode
+.yarn
+.gitattributes
+.prettierignore
