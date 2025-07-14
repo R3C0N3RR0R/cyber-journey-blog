@@ -1,0 +1,24 @@
+---
+title: Kerberoasting
+date: '2025-07-14'
+draft: false
+---
+
+
+
+
+Le **Kerberoasting** est une technique d’attaque Active Directory qui consiste à demander des tickets de service Kerberos (TGS) pour des comptes de service, puis à tenter de casser le hash du mot de passe hors-ligne.  
+Cette attaque permet à un attaquant ayant un accès authentifié au domaine d’obtenir des mots de passe de comptes à privilèges.
+
+**Étapes principales :**
+- Lister les comptes de service disposant d’un SPN.
+- Demander un ticket TGS pour ces comptes.
+- Extraire le hash du ticket.
+- Craquer le hash pour obtenir le mot de passe en clair.
+
+**Contre-mesures :**
+- Utiliser des mots de passe forts pour les comptes de service.
+- Surveiller les requêtes TGS inhabituelles.
+- Limiter les droits des comptes de service.
+
+*Voir aussi : [Kerberoasting sur HackTricks](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoasting)*

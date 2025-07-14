@@ -3,9 +3,12 @@ import { allCoreContent, sortPosts } from 'pliny/utils/contentlayer'
 import siteMetadata from '@/data/siteMetadata'
 import ListLayout from '@/layouts/ListLayoutWithTags'
 import { allBlogs } from 'contentlayer/generated'
-import tagData from 'app/tag-data.js'
+import tagData from 'app/tag-data.json'
 import { genPageMetadata } from 'app/seo'
 import { Metadata } from 'next'
+import fs from 'fs'
+import path from 'path'
+import matter from 'gray-matter'
 
 const POSTS_PER_PAGE = 5
 
@@ -48,12 +51,24 @@ export default async function TagPage(props: { params: Promise<{ tag: string }> 
     totalPages: totalPages,
   }
 
+  // Ajoute ceci pour charger la description du tag
+  let tagDescription = ''
+  const tagFilePath = path.join(process.cwd(), 'data/tags', `${tag}.mdx`)
+  if (fs.existsSync(tagFilePath)) {
+    const fileContent = fs.readFileSync(tagFilePath, 'utf8')
+    tagDescription = matter(fileContent).content
+  }
+
   return (
-    <ListLayout
-      posts={filteredPosts}
-      initialDisplayPosts={initialDisplayPosts}
-      pagination={pagination}
-      title={title}
-    />
+    <>
+      <h1>{title}</h1>
+      {tagDescription && <div className="prose" dangerouslySetInnerHTML={{ __html: tagDescription }} />}
+      <ListLayout
+        posts={filteredPosts}
+        initialDisplayPosts={initialDisplayPosts}
+        pagination={pagination}
+        title={title}
+      />
+    </>
   )
 }

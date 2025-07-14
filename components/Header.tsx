@@ -18,11 +18,12 @@ const Header = () => {
       <Link href="/" aria-label={siteMetadata.headerTitle}>
         <div className="flex items-center justify-between">
           <div className="mr-3">
-            <Image src={Logo} alt="Logo" width={100} height={100} />
+            {/* Remplacement du logo SVG par l'avatar */}
+            <Image src="/static/images/avatar_cyber.png" alt="Avatar Cyber" width={150} height={150} style={{ borderRadius: '50%' }} />
           </div>
           {typeof siteMetadata.headerTitle === 'string' ? (
             <div className="hidden h-6 text-2xl font-semibold sm:block">
-              {siteMetadata.headerTitle}
+               {siteMetadata.headerTitle}
             </div>
           ) : (
             siteMetadata.headerTitle

