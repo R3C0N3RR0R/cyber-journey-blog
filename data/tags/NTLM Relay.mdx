@@ -1,0 +1,66 @@
+---
+title: NTLM Relay
+date: '2025-07-15'
+draft: false
+---
+
+# 🔄 NTLM Relay
+
+## Qu'est-ce que le NTLM Relay ?
+
+Le **NTLM Relay** est une attaque qui exploite le protocole d'authentification NTLM de Microsoft. Elle consiste à intercepter une authentification NTLM légitime et à la relayer vers un autre service pour obtenir un accès non autorisé.
+
+## 🎯 Objectifs pédagogiques
+- Comprendre le fonctionnement du protocole NTLM
+- Savoir comment une attaque de relayage NTLM est réalisée
+- Identifier les risques associés à l'absence de signature SMB
+
+## 📋 Exemples de vulnérabilités et exploitation
+
+### Vulnérabilités courantes
+- **Absence de signature SMB** : Permet le relayage vers des partages de fichiers.
+- **Services HTTP acceptant NTLM** : Certains serveurs web internes acceptent l'authentification NTLM et sont vulnérables au relay.
+- **Mauvaise segmentation réseau** : Permet de relayer les identifiants sur d'autres machines du réseau.
+
+### Scénario d'exploitation
+1. **Attaque sur un partage SMB** :
+   - L'attaquant attend qu'une victime tente d'accéder à un partage contrôlé par l'attaquant (ex : via un lien malicieux ou une attaque LLMNR/NBT-NS spoofing).
+   - L'attaquant relaie l'authentification NTLM reçue vers un autre serveur SMB vulnérable.
+2. **Relay HTTP → SMB** :
+   - Certains outils permettent de relayer une authentification HTTP NTLM vers un partage SMB.
+
+### Commandes d'exploitation avec impacket
+
+```bash
+# Lancer un serveur relay SMB → SMB
+sudo ntlmrelayx.py -t smb://10.10.10.2
+
+# Relay HTTP → SMB
+sudo ntlmrelayx.py -t smb://10.10.10.2 --http-port 8080
+
+# Attaque combinée avec Responder pour capturer les identifiants
+sudo responder -I eth0
+```
+
+### Exploitation avancée
+- **Ajout d'un nouvel utilisateur local** :
+  - Si le serveur cible autorise l'exécution de commandes via SMB (ex : interface d'administration), il est possible de créer un nouvel utilisateur ou d'ajouter l'attaquant à un groupe privilégié.
+
+```bash
+# Ajout d'un utilisateur via ntlmrelayx (si privilèges suffisants)
+ntlmrelayx.py -t smb://10.10.10.2 --add-user hacker:Password123!
+```
+
+## 🛡️ Bonnes pratiques
+- Activer la signature SMB sur tous les serveurs
+- Privilégier Kerberos à NTLM pour l'authentification
+- Segmenter le réseau pour limiter les mouvements latéraux
+- Surveiller les tentatives de connexion suspectes
+
+## 📚 Ressources utiles
+- [HackTricks - NTLM Relay](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ntlm-relay)
+- [Microsoft - NTLM Relay](https://learn.microsoft.com/en-us/windows-server/security/credentials-protection-and-management/ntlm-relay)
+- [Impacket - ntlmrelayx](https://github.com/fortra/impacket/blob/master/examples/ntlmrelayx.py)
+
+---
+*Dernière mise à jour : 15 juillet 2025* 

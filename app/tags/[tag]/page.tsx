@@ -9,6 +9,9 @@ import { Metadata } from 'next'
 import fs from 'fs'
 import path from 'path'
 import matter from 'gray-matter'
+import { remark } from 'remark'
+import remarkGfm from 'remark-gfm'
+import remarkHtml from 'remark-html'
 
 const POSTS_PER_PAGE = 5
 
@@ -51,18 +54,33 @@ export default async function TagPage(props: { params: Promise<{ tag: string }> 
     totalPages: totalPages,
   }
 
-  // Ajoute ceci pour charger la description du tag
-  let tagDescription = ''
+  // Traitement MDX pour la description du tag
+  let tagDescriptionHtml = ''
   const tagFilePath = path.join(process.cwd(), 'data/tags', `${tag}.mdx`)
   if (fs.existsSync(tagFilePath)) {
     const fileContent = fs.readFileSync(tagFilePath, 'utf8')
-    tagDescription = matter(fileContent).content
+    const { content } = matter(fileContent)
+    
+    // Traitement du markdown en HTML
+    const processedContent = await remark()
+      .use(remarkGfm)
+      .use(remarkHtml)
+      .process(content)
+    
+    tagDescriptionHtml = processedContent.toString()
   }
 
   return (
     <>
-      <h1>{title}</h1>
-      {tagDescription && <div className="prose" dangerouslySetInnerHTML={{ __html: tagDescription }} />}
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
+        {tagDescriptionHtml && (
+          <div 
+            className="prose prose-lg dark:prose-invert max-w-none prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-code:text-gray-900 dark:prose-code:text-gray-100 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-blockquote:border-l-gray-300 dark:prose-blockquote:border-l-gray-600 prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300"
+            dangerouslySetInnerHTML={{ __html: tagDescriptionHtml }} 
+          />
+        )}
+      </div>
       <ListLayout
         posts={filteredPosts}
         initialDisplayPosts={initialDisplayPosts}

@@ -28,9 +28,9 @@ export default function PostLayout({ content, next, prev, children }: LayoutProp
             <div className="space-y-1 border-b border-gray-200 pb-10 text-center dark:border-gray-700">
               <dl>
                 <div>
-                  <dt className="sr-only">Published on</dt>
+                  <dt className="sr-only">Publié le</dt>
                   <dd className="text-base leading-6 font-medium text-gray-500 dark:text-gray-400">
-                    <time dateTime={date}>{formatDate(date, siteMetadata.locale)}</time>
+                    <time dateTime={date}>{formatDate(date, 'fr-FR')}</time>
                   </dd>
                 </div>
               </dl>
@@ -39,9 +39,18 @@ export default function PostLayout({ content, next, prev, children }: LayoutProp
               </div>
             </div>
           </header>
-          <div className="grid-rows-[auto_1fr] divide-y divide-gray-200 pb-8 xl:divide-y-0 dark:divide-gray-700">
-            <div className="divide-y divide-gray-200 xl:col-span-3 xl:row-span-2 xl:pb-0 dark:divide-gray-700">
+          <div className="grid-rows-[auto_1fr] divide-y divide-gray-200 pb-8 xl:grid xl:grid-cols-4 xl:divide-y-0 dark:divide-gray-700">
+            {/* Bordure gauche */}
+            <div className="hidden xl:block xl:col-span-1">
+              <div style={{ width: '6px', height: '100%', background: '#8ac13c', borderRadius: '3px', margin: '0 auto' }} />
+            </div>
+            {/* Zone centrale avec le texte */}
+            <div className="divide-y divide-gray-200 xl:col-span-2 xl:row-span-2 xl:pb-0 dark:divide-gray-700">
               <div className="prose dark:prose-invert max-w-none pt-10 pb-8">{children}</div>
+            </div>
+            {/* Bordure droite */}
+            <div className="hidden xl:block xl:col-span-1">
+              <div style={{ width: '6px', height: '100%', background: '#8ac13c', borderRadius: '3px', margin: '0 auto' }} />
             </div>
             {siteMetadata.comments && (
               <div className="pt-6 pb-6 text-center text-gray-700 dark:text-gray-300" id="comment">

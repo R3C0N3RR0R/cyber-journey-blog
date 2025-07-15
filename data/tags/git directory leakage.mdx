@@ -1,0 +1,55 @@
+---
+title: Git Directory Leakage
+date: '2025-07-15'
+draft: false
+---
+
+# 🗂️ Git Directory Leakage
+
+## Qu'est-ce que le Git Directory Leakage ?
+
+Le **Git Directory Leakage** désigne l'exposition accidentelle du répertoire `.git` d'un projet web, permettant à un attaquant de récupérer l'historique complet du code source, des mots de passe ou des clés sensibles.
+
+## 🎯 Objectifs pédagogiques
+- Comprendre les risques liés à l'exposition du dossier .git
+- Savoir comment un attaquant peut exploiter cette fuite
+
+## 📋 Exemples de vulnérabilités et exploitation
+
+### Vulnérabilités courantes
+- **Déploiement du dossier .git en production** : Le répertoire .git est accessible via le web.
+- **Absence de restriction sur les fichiers cachés** : Les fichiers comme `.git/config`, `.git/HEAD` sont téléchargeables.
+
+### Scénario d'exploitation
+1. **Téléchargement du dossier .git** :
+   - L'attaquant télécharge le dossier .git avec des outils automatisés.
+   - Exemple avec GitTools :
+```bash
+gitdumper.sh http://victime.com/.git/ ./repo_recupere
+```
+2. **Extraction de fichiers sensibles** :
+   - L'attaquant récupère les fichiers de configuration, mots de passe, clés API, etc.
+   - Exemple pour lister les fichiers :
+```bash
+cd repo_recupere
+git log --oneline --stat
+git show <commit>
+```
+3. **Récupération d'un mot de passe oublié** :
+   - Recherche dans l'historique :
+```bash
+git grep password
+```
+
+## 🛡️ Bonnes pratiques
+- Ne jamais déployer le dossier .git sur un serveur de production
+- Utiliser un fichier .gitignore adapté
+- Scanner régulièrement les serveurs web pour détecter les fuites
+
+## 📚 Ressources utiles
+- [OWASP - GitHub Security](https://owasp.org/www-community/vulnerabilities/Git_Repository_Information_Leakage)
+- [GitTools](https://github.com/internetwache/GitTools)
+- [GitHack](https://github.com/BugScanTeam/GitHack)
+
+---
+*Dernière mise à jour : 15 juillet 2025* 
