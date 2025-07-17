@@ -19,10 +19,11 @@ export default function AuthorLayout({ children, content }: Props) {
             À propos
           </h1>
           <div className="mb-4 text-base font-semibold text-yellow-700 dark:text-yellow-300">
-            ⚠️ Ce blog est à caractère éducatif et toutes les techniques présentées sont réalisées dans un cadre légal et autorisé.
+            ⚠️ Ce blog est à caractère éducatif et toutes les techniques présentées sont réalisées
+            dans un cadre légal et autorisé.
           </div>
         </div>
-        <div className="items-start space-y-2 xl:grid xl:grid-cols-3 xl:gap-x-8 xl:space-y-0">
+        <div className="items-start space-y-2 xl:grid xl:grid-cols-3 xl:space-y-0 xl:gap-x-8">
           <div className="flex flex-col items-center space-x-2 pt-8">
             {avatar && (
               <Image

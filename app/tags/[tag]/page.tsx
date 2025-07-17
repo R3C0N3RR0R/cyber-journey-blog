@@ -60,13 +60,10 @@ export default async function TagPage(props: { params: Promise<{ tag: string }> 
   if (fs.existsSync(tagFilePath)) {
     const fileContent = fs.readFileSync(tagFilePath, 'utf8')
     const { content } = matter(fileContent)
-    
+
     // Traitement du markdown en HTML
-    const processedContent = await remark()
-      .use(remarkGfm)
-      .use(remarkHtml)
-      .process(content)
-    
+    const processedContent = await remark().use(remarkGfm).use(remarkHtml).process(content)
+
     tagDescriptionHtml = processedContent.toString()
   }
 
@@ -75,9 +72,9 @@ export default async function TagPage(props: { params: Promise<{ tag: string }> 
       <div className="space-y-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
         {tagDescriptionHtml && (
-          <div 
-            className="prose prose-lg dark:prose-invert max-w-none prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-code:text-gray-900 dark:prose-code:text-gray-100 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-blockquote:border-l-gray-300 dark:prose-blockquote:border-l-gray-600 prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300"
-            dangerouslySetInnerHTML={{ __html: tagDescriptionHtml }} 
+          <div
+            className="prose prose-lg dark:prose-invert prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-code:text-gray-900 dark:prose-code:text-gray-100 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-blockquote:border-l-gray-300 dark:prose-blockquote:border-l-gray-600 prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300 max-w-none"
+            dangerouslySetInnerHTML={{ __html: tagDescriptionHtml }}
           />
         )}
       </div>

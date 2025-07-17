@@ -42,7 +42,13 @@ export default function Home({ posts }: HomeProps) {
                       </dd>
                       {/* Affichage de l'image sous la date */}
                       <dd className="pt-4 pb-2">
-                        <Image src={displayImage} alt={title} width={125} height={125} className="rounded-md object-cover" />
+                        <Image
+                          src={displayImage}
+                          alt={title}
+                          width={125}
+                          height={125}
+                          className="rounded-md object-cover"
+                        />
                       </dd>
                     </dl>
                     <div className="space-y-5 xl:col-span-3">

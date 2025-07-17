@@ -11,45 +11,57 @@ draft: false
 **BloodHound** est un outil d'analyse de graphe permettant de cartographier et d'analyser les relations et permissions dans un environnement Active Directory. Il est très utilisé en audit de sécurité et en red teaming.
 
 ## 🎯 Objectifs pédagogiques
+
 - Comprendre l'intérêt de la cartographie des relations AD
 - Savoir utiliser BloodHound pour identifier des chemins d'attaque
 
 ## 📋 Exemples de scénarios et commandes
 
 ### Collecte de données avec SharpHound
+
 - **Collecte complète** :
+
 ```bash
 SharpHound.exe -c All -d ad.local -u user -p 'Password123!'
 ```
+
 - **Collecte ciblée (groupes à privilèges)** :
+
 ```bash
 SharpHound.exe -c ACL,Session,Trusts -d ad.local
 ```
+
 - **Collecte via Linux (impacket)** :
+
 ```bash
 python3 bloodhound-python -u user -p 'Password123!' -d ad.local -c all -ns 10.10.10.2
 ```
 
 ### Analyse et exploitation
+
 - **Recherche de chemins d'escalade** :
   - Utiliser l'interface graphique BloodHound pour visualiser les chemins d'attaque (ex : "Shortest Path to Domain Admins").
 - **Exploitation d'une délégation non contrainte** :
   - Identifier les comptes avec la délégation et tenter un Kerberos S4U2Self/S4U2Proxy.
 
 ### Cas d'usage
+
 - Audit de la surface d'attaque AD
 - Détection de comptes à privilèges mal configurés
 - Préparation d'une campagne de red teaming
 
 ## 🛡️ Bonnes pratiques
+
 - Limiter les droits d'administration déléguée
 - Auditer régulièrement les groupes à privilèges
 - Surveiller l'utilisation d'outils de collecte comme SharpHound
 
 ## 📚 Ressources utiles
+
 - [BloodHound Wiki](https://bloodhound.readthedocs.io/)
 - [HackTricks - BloodHound](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/bloodhound)
 - [SpecterOps - BloodHound](https://specterops.io/asset/bloodhound)
 
 ---
-*Dernière mise à jour : 15 juillet 2025* 
+
+_Dernière mise à jour : 15 juillet 2025_
