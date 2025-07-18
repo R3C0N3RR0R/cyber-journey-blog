@@ -1,8 +1,4 @@
 {
-  "malicious-file-upload": 1,
-  "backup-file-exposure": 1,
-  "port-enumeration": 1,
-  "credential-cracking": 1,
   "sudo-exploit": 1,
   "git-directory-leakage": 1,
   "rce": 1,

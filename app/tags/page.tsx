@@ -14,30 +14,28 @@ export default async function Page() {
     <>
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="mb-10 text-center">
-          <h1 className="mb-2 text-4xl font-extrabold text-gray-900 dark:text-white">
+          <h1 className="mb-2 text-4xl font-extrabold text-white">
             Tous les tags
           </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-300">
+          <p className="text-lg text-gray-400">
             Explorez les thématiques abordées sur le blog. Cliquez sur un tag pour découvrir tous
             les articles associés.
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="flex flex-wrap justify-center gap-2 bg-black py-6 rounded-xl">
           {sortedTags.length === 0 && (
-            <div className="col-span-full text-center text-gray-500">Aucun tag trouvé.</div>
+            <div className="text-center text-gray-400">Aucun tag trouvé.</div>
           )}
           {sortedTags.map((t) => (
             <Link
               key={t}
               href={`/tags/${slug(t).toLowerCase()}`}
-              className="group focus:ring-primary-500 flex flex-col items-center justify-center rounded-xl border border-primary-200 bg-primary-50 p-6 shadow-md transition hover:-translate-y-1 hover:shadow-xl focus:ring-2 focus:outline-none dark:border-primary-700 dark:bg-primary-950"
+              className="inline-block rounded-full border px-3 py-1 text-sm font-semibold text-white bg-black transition-colors duration-150 border-[#8ac13c] hover:bg-[#8ac13c] hover:text-black"
               aria-label={`Voir les articles tagués ${t}`}
             >
-              <span className="mb-2 inline-block rounded-full bg-primary-500 px-4 py-2 text-lg font-semibold text-white shadow transition-transform group-hover:bg-primary-600 group-hover:scale-105 dark:bg-primary-400 dark:group-hover:bg-primary-600">
-                {t.split('-').join(' ')}
-              </span>
-              <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
-                {tagCounts[t]} article{tagCounts[t] > 1 ? 's' : ''}
+              {t.split('-').join(' ')}
+              <span className="ml-1 text-xs font-normal text-gray-400">
+                ({tagCounts[t]})
               </span>
             </Link>
           ))}
