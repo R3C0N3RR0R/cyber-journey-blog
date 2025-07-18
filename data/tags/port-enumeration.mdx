@@ -1,0 +1,60 @@
+---
+title: Port Enumeration
+date: '2025-07-15'
+draft: false
+---
+
+# 🔎 Port Enumeration
+
+## Qu'est-ce que l'énumération de ports ?
+
+L'énumération de ports consiste à scanner les ports d'une machine pour identifier les services actifs et détecter d'éventuelles failles.
+
+## 🎯 Objectifs pédagogiques
+
+- Comprendre l'intérêt de l'énumération de ports
+- Savoir utiliser des outils de scan de ports
+
+## 📋 Exemples de scénarios et commandes
+
+- Scanner les ports avec Nmap :
+  ```bash
+  nmap -sS -p- 10.10.10.10
+  ```
+- Identifier les services derrière les ports ouverts
+- Exploiter un service vulnérable découvert lors du scan
+
+## 🛡️ Bonnes pratiques
+
+- Restreindre l'accès aux ports non utilisés
+- Mettre à jour les services exposés
+- Surveiller les tentatives de scan
+
+## 🛠️ Outils et commandes les plus utilisés
+
+- **nmap** :
+  ```bash
+  nmap -sS -p- -T4 10.10.10.10
+  nmap -sV -A 10.10.10.10
+  ```
+- **masscan** : Scan très rapide de tous les ports
+  ```bash
+  masscan -p1-65535 10.10.10.10 --rate=10000
+  ```
+- **netcat** : Vérification manuelle d'un port
+  ```bash
+  nc -vz 10.10.10.10 80
+  ```
+- **rustscan** : Alternative rapide à nmap
+  ```bash
+  rustscan -a 10.10.10.10
+  ```
+
+## 📚 Ressources utiles
+
+- [Nmap - Guide](https://nmap.org/book/)
+- [HackTricks - Port Scanning](https://book.hacktricks.xyz/network-services-pentesting/tcp-port-scanning)
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

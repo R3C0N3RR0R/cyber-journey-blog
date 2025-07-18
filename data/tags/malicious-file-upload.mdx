@@ -1,0 +1,56 @@
+---
+title: Malicious File Upload
+date: '2025-07-15'
+draft: false
+---
+
+# 🗂️ Malicious File Upload
+
+## Qu'est-ce qu'un Malicious File Upload ?
+
+L'upload de fichiers malveillants consiste à transférer sur un serveur des fichiers conçus pour exécuter du code ou compromettre la sécurité du système. Cette technique est souvent utilisée pour obtenir un accès non autorisé ou exécuter des commandes à distance.
+
+## 🎯 Objectifs pédagogiques
+
+- Comprendre les risques liés à l'upload de fichiers
+- Savoir identifier et exploiter une faille d'upload
+
+## 📋 Exemples de scénarios et commandes
+
+- Envoyer un fichier avec une extension inattendue pour contourner les filtres (ex : `.jpg.php`)
+- Tester l'upload de fichiers avec des outils automatisés
+- Exploiter une mauvaise configuration de droits d'accès
+
+## 🛠️ Outils et commandes les plus utilisés
+
+- **Burp Suite** : Intercepter et modifier les requêtes d'upload
+- **curl** :
+  ```bash
+  curl -F 'file=@test.jpg' http://site-vulnerable/upload.php
+  ```
+- **wfuzz / gobuster** : Brute force des extensions ou endpoints d'upload
+  ```bash
+  wfuzz -c -w wordlist.txt --hc 404 http://site-vulnerable/upload/FUZZ
+  gobuster dir -u http://site-vulnerable/ -w wordlist.txt -x php,asp,jpg
+  ```
+- **exiftool** : Modifier les métadonnées d'un fichier image
+  ```bash
+  exiftool -Comment='test' image.jpg
+  ```
+- **php-reverse-shell** : Utiliser un shell PHP pour prise de contrôle (ne pas inclure le code, voir le dépôt officiel)
+  [php-reverse-shell (GitHub)](https://github.com/pentestmonkey/php-reverse-shell)
+
+## 🛡️ Bonnes pratiques
+
+- Restreindre les types de fichiers acceptés
+- Mettre en place une validation côté serveur
+- Désactiver l'exécution dans les dossiers d'upload
+
+## 📚 Ressources utiles
+
+- [OWASP - File Upload](https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload)
+- [HackTricks - File Upload](https://book.hacktricks.xyz/pentesting-web/file-upload)
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

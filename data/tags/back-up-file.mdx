@@ -1,0 +1,54 @@
+---
+title: Back-up File Exposure
+date: '2025-07-15'
+draft: false
+---
+
+# 💾 Back-up File Exposure
+
+## Qu'est-ce que l'exposition de fichiers de sauvegarde ?
+
+L'exposition de fichiers de sauvegarde permet d'accéder à des copies de fichiers sensibles laissées sur le serveur, souvent par erreur ou négligence.
+
+## 🎯 Objectifs pédagogiques
+
+- Comprendre les risques liés aux fichiers de sauvegarde
+- Savoir détecter et exploiter des fichiers de backup exposés
+
+## 📋 Exemples de scénarios et commandes
+
+- Rechercher des fichiers .bak, .old, .zip, etc. sur un serveur web
+- Télécharger un fichier de backup contenant des informations sensibles
+- Exploiter un backup pour obtenir des identifiants ou du code source
+
+## 🛠️ Outils et commandes les plus utilisés
+
+- **gobuster / dirsearch** : Découverte de fichiers de backup
+  ```bash
+  gobuster dir -u http://site/ -w wordlist.txt -x bak,old,zip,tar
+  dirsearch -u http://site/ -e bak,old,zip,tar
+  ```
+- **wget / curl** : Télécharger les fichiers trouvés
+  ```bash
+  wget http://site/backup.zip
+  curl -O http://site/backup.bak
+  ```
+- **strings** : Analyser le contenu d'un fichier backup
+  ```bash
+  strings backup.bak | less
+  ```
+
+## 🛡️ Bonnes pratiques
+
+- Ne jamais laisser de fichiers de sauvegarde accessibles publiquement
+- Mettre en place des règles de nettoyage automatique
+- Surveiller les dépôts de fichiers temporaires
+
+## 📚 Ressources utiles
+
+- [OWASP - Backup Files](https://owasp.org/www-community/vulnerabilities/Backup_Files_Exposure)
+- [HackTricks - Backup Files](https://book.hacktricks.xyz/pentesting-web/backup-files)
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

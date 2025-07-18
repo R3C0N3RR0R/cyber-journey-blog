@@ -30,13 +30,13 @@ export default async function Page() {
             <Link
               key={t}
               href={`/tags/${slug(t).toLowerCase()}`}
-              className="group focus:ring-primary-500 flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white p-6 shadow-md transition hover:-translate-y-1 hover:shadow-xl focus:ring-2 focus:outline-none dark:border-gray-700 dark:bg-gray-900"
+              className="group focus:ring-primary-500 flex flex-col items-center justify-center rounded-xl border border-primary-200 bg-primary-50 p-6 shadow-md transition hover:-translate-y-1 hover:shadow-xl focus:ring-2 focus:outline-none dark:border-primary-700 dark:bg-primary-950"
               aria-label={`Voir les articles tagués ${t}`}
             >
-              <span className="mb-2 inline-block rounded-full bg-gradient-to-r from-green-400 via-blue-400 to-purple-400 px-4 py-2 text-lg font-semibold text-white shadow transition-transform group-hover:scale-105">
+              <span className="mb-2 inline-block rounded-full bg-primary-500 px-4 py-2 text-lg font-semibold text-white shadow transition-transform group-hover:bg-primary-600 group-hover:scale-105 dark:bg-primary-400 dark:group-hover:bg-primary-600">
                 {t.split('-').join(' ')}
               </span>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
                 {tagCounts[t]} article{tagCounts[t] > 1 ? 's' : ''}
               </span>
             </Link>
