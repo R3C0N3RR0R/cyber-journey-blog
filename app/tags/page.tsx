@@ -29,7 +29,7 @@ export default async function Page() {
           {sortedTags.map((t) => (
             <Link
               key={t}
-              href={`/tags/${slug(t)}`}
+              href={`/tags/${slug(t).toLowerCase()}`}
               className="group focus:ring-primary-500 flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white p-6 shadow-md transition hover:-translate-y-1 hover:shadow-xl focus:ring-2 focus:outline-none dark:border-gray-700 dark:bg-gray-900"
               aria-label={`Voir les articles tagués ${t}`}
             >
