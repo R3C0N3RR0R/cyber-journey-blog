@@ -1,14 +1,14 @@
 {
-  "remote-code-execution": 2,
-  "ntlm-relay": 1,
-  "shadow-credentials": 1,
-  "esc16": 1,
-  "kerberoasting": 1,
-  "bloodhound": 1,
   "port-enumeration": 1,
   "malicious-file-upload": 1,
   "backup-file-exposure": 1,
   "credential-cracking": 1,
+  "remote-code-execution": 2,
   "sudo-exploit": 1,
-  "git-directory-leakage": 1
+  "git-directory-leakage": 1,
+  "ntlm-relay": 1,
+  "shadow-credentials": 1,
+  "esc16": 1,
+  "kerberoasting": 1,
+  "bloodhound": 1
 }

@@ -5,6 +5,14 @@
   "hints": {
     "manifest-file-extension": "off",
     "apple-touch-icons": "off",
-    "compat-api/html": "off"
+    "compat-api/html": "off",
+    "compat-api/css": [
+      "default",
+      {
+        "ignore": [
+          "scrollbar-width"
+        ]
+      }
+    ]
   }
 }
