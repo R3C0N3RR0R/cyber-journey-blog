@@ -16,7 +16,7 @@ export default async function Page() {
   return (
     <>
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="mb-10 text-center">
+        <div className="mb-10 text-left">
           <h1 className="mb-2 text-4xl font-extrabold text-white">
             Tous les tags
           </h1>
