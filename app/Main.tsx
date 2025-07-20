@@ -1,17 +1,17 @@
-import Link from '@/components/Link'
-import Tag from '@/components/Tag'
-import siteMetadata from '@/data/siteMetadata'
-import { formatDate } from 'pliny/utils/formatDate'
-import NewsletterForm from 'pliny/ui/NewsletterForm'
-import type { CoreContent } from 'pliny/utils/contentlayer'
-import type { Blog } from 'contentlayer/generated'
-import Image from 'next/image'
+import Link from "@/components/Link";
+import Tag from "@/components/Tag";
+import siteMetadata from "@/data/siteMetadata";
+import { formatDate } from "pliny/utils/formatDate";
+import NewsletterForm from "pliny/ui/NewsletterForm";
+import type { CoreContent } from "pliny/utils/contentlayer";
+import type { Blog } from "contentlayer/generated";
+import Image from "next/image";
 
 interface HomeProps {
-  posts: CoreContent<Blog>[]
+  posts: CoreContent<Blog>[];
 }
 
-const MAX_DISPLAY = 5
+const MAX_DISPLAY = 5;
 
 export default function Home({ posts }: HomeProps) {
   return (
@@ -26,11 +26,14 @@ export default function Home({ posts }: HomeProps) {
           </p>
         </div>
         <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-          {!posts.length && 'No posts found.'}
+          {!posts.length && "No posts found."}
           {posts.slice(0, MAX_DISPLAY).map((post) => {
-            const { slug, date, title, summary, tags, images } = post
+            const { slug, date, title, summary, tags, images } = post;
             // On prend la première image si elle existe, sinon une image par défaut
-            const displayImage = images && images.length > 0 ? images[0] : '/static/images/logo.png'
+            const displayImage =
+              images && images.length > 0
+                ? images[0]
+                : "/static/images/logo.png";
             return (
               <li key={slug} className="py-12">
                 <article>
@@ -38,7 +41,7 @@ export default function Home({ posts }: HomeProps) {
                     <dl>
                       <dt className="sr-only">Publié le</dt>
                       <dd className="text-base leading-6 font-medium text-gray-500 dark:text-gray-400">
-                        <time dateTime={date}>{formatDate(date, 'fr-FR')}</time>
+                        <time dateTime={date}>{formatDate(date, "fr-FR")}</time>
                       </dd>
                       {/* Affichage de l'image sous la date */}
                       <dd className="pt-4 pb-2">
@@ -76,7 +79,7 @@ export default function Home({ posts }: HomeProps) {
                         <Link
                           href={`/blog/${slug}`}
                           // className="text-green-400 hover:text-primary-600 dark:hover:text-primary-400"
-                          style={{ color: '#8ac13c' }}
+                          style={{ color: "#8ac13c" }}
                           aria-label={`Voir plus : "${title}"`}
                         >
                           Voir plus &rarr;
@@ -86,7 +89,7 @@ export default function Home({ posts }: HomeProps) {
                   </div>
                 </article>
               </li>
-            )
+            );
           })}
         </ul>
       </div>
@@ -107,5 +110,5 @@ export default function Home({ posts }: HomeProps) {
         </div>
       )} */}
     </>
-  )
+  );
 }

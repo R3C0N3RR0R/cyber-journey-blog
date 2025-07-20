@@ -1,17 +1,17 @@
 /** @type {import("pliny/config").PlinyConfig } */
 const siteMetadata = {
-  title: 'Cyber Journey',
-  author: 'r3c0n_3rr0r',
-  headerTitle: 'R3C0N_3RR0R',
-  description: 'Cybersecurity Journey',
-  language: 'en-us',
-  theme: 'system', // system, dark or light
-  siteUrl: 'https://tailwind-nextjs-starter-blog.vercel.app',
-  siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
-  siteLogo: `${process.env.BASE_PATH || ''}/static/images/avatar_cyber.png`,
-  socialBanner: `${process.env.BASE_PATH || ''}/static/images/twitter-card.png`,
-  mastodon: 'https://mastodon.social/@mastodonuser',
-  email: 'rory.kason48@dontsp.am',
+  title: "Cyber Journey",
+  author: "r3c0n_3rr0r",
+  headerTitle: "R3C0N_3RR0R",
+  description: "Cybersecurity Journey",
+  language: "en-us",
+  theme: "system", // system, dark or light
+  siteUrl: "https://tailwind-nextjs-starter-blog.vercel.app",
+  siteRepo: "https://github.com/timlrx/tailwind-nextjs-starter-blog",
+  siteLogo: `${process.env.BASE_PATH || ""}/static/images/avatar_cyber.png`,
+  socialBanner: `${process.env.BASE_PATH || ""}/static/images/twitter-card.png`,
+  mastodon: "https://mastodon.social/@mastodonuser",
+  email: "rory.kason48@dontsp.am",
   // github: 'https://github.com',
   // x: 'https://twitter.com/x',
   // twitter: 'https://twitter.com/Twitter',
@@ -22,7 +22,7 @@ const siteMetadata = {
   // instagram: 'https://www.instagram.com',
   // medium: 'https://medium.com',
   // bluesky: 'https://bsky.app/',
-  locale: 'en-US',
+  locale: "en-US",
   // set to true if you want a navbar fixed to the top
   stickyNav: false,
   analytics: {
@@ -52,14 +52,14 @@ const siteMetadata = {
   newsletter: {
     // supports mailchimp, buttondown, convertkit, klaviyo, revue, emailoctopus, beehive
     // Please add your .env file and modify it according to your selection
-    provider: 'buttondown',
+    provider: "buttondown",
   },
   comments: {
     // If you want to use an analytics provider you have to add it to the
     // content security policy in the `next.config.js` file.
     // Select a provider and use the environment variables associated to it
     // https://vercel.com/docs/environment-variables
-    provider: 'giscus', // supported providers: giscus, utterances, disqus
+    provider: "giscus", // supported providers: giscus, utterances, disqus
     giscusConfig: {
       // Visit the link below, and follow the steps in the 'configuration' section
       // https://giscus.app/
@@ -67,27 +67,27 @@ const siteMetadata = {
       repositoryId: process.env.NEXT_PUBLIC_GISCUS_REPOSITORY_ID,
       category: process.env.NEXT_PUBLIC_GISCUS_CATEGORY,
       categoryId: process.env.NEXT_PUBLIC_GISCUS_CATEGORY_ID,
-      mapping: 'pathname', // supported options: pathname, url, title
-      reactions: '1', // Emoji reactions: 1 = enable / 0 = disable
+      mapping: "pathname", // supported options: pathname, url, title
+      reactions: "1", // Emoji reactions: 1 = enable / 0 = disable
       // Send discussion metadata periodically to the parent window: 1 = enable / 0 = disable
-      metadata: '0',
+      metadata: "0",
       // theme example: light, dark, dark_dimmed, dark_high_contrast
       // transparent_dark, preferred_color_scheme, custom
-      theme: 'light',
+      theme: "light",
       // theme when dark mode
-      darkTheme: 'transparent_dark',
+      darkTheme: "transparent_dark",
       // If the theme option above is set to 'custom`
       // please provide a link below to your custom theme css file.
       // example: https://giscus.app/themes/custom_example.css
-      themeURL: '',
+      themeURL: "",
       // This corresponds to the `data-lang="en"` in giscus's configurations
-      lang: 'en',
+      lang: "en",
     },
   },
   search: {
-    provider: 'kbar', // kbar or algolia
+    provider: "kbar", // kbar or algolia
     kbarConfig: {
-      searchDocumentsPath: `${process.env.BASE_PATH || ''}/search.json`, // path to load documents to search
+      searchDocumentsPath: `${process.env.BASE_PATH || ""}/search.json`, // path to load documents to search
     },
     // provider: 'algolia',
     // algoliaConfig: {
@@ -98,6 +98,6 @@ const siteMetadata = {
     //   indexName: 'docsearch',
     // },
   },
-}
+};
 
-export default siteMetadata
+export default siteMetadata;

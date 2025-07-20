@@ -1,4 +1,4 @@
-import Link from '@/components/Link'
+import Link from "@/components/Link";
 
 export default function NotFound() {
   return (
@@ -13,8 +13,8 @@ export default function NotFound() {
           Désolé cette page n'existe pas.
         </p>
         <p className="mb-8">
-          Mais pas de panique, vous pouvez trouver beaucoup d'autres choses dans notre page
-          d'accueil.
+          Mais pas de panique, vous pouvez trouver beaucoup d'autres choses dans
+          notre page d'accueil.
         </p>
         <Link
           href="/"
@@ -24,5 +24,5 @@ export default function NotFound() {
         </Link>
       </div>
     </div>
-  )
+  );
 }

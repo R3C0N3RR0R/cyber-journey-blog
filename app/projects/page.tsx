@@ -1,8 +1,8 @@
-import projectsData from '@/data/projectsData'
-import Card from '@/components/Card'
-import { genPageMetadata } from 'app/seo'
+import projectsData from "@/data/projectsData";
+import Card from "@/components/Card";
+import { genPageMetadata } from "app/seo";
 
-export const metadata = genPageMetadata({ title: 'Projects' })
+export const metadata = genPageMetadata({ title: "Projects" });
 
 export default function Projects() {
   return (
@@ -23,13 +23,13 @@ export default function Projects() {
                 key={d.title}
                 title={d.title}
                 description={d.description}
-                imgSrc={d.imgSrc || ''}
-                href={d.href || ''}
+                imgSrc={d.imgSrc || ""}
+                href={d.href || ""}
               />
             ))}
           </div>
         </div>
       </div>
     </>
-  )
+  );
 }

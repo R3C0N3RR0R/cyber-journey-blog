@@ -1,15 +1,25 @@
-import { ReactNode } from 'react'
-import type { Authors } from 'contentlayer/generated'
-import SocialIcon from '@/components/social-icons'
-import Image from '@/components/Image'
+import { ReactNode } from "react";
+import type { Authors } from "contentlayer/generated";
+import SocialIcon from "@/components/social-icons";
+import Image from "@/components/Image";
 
 interface Props {
-  children: ReactNode
-  content: Omit<Authors, '_id' | '_raw' | 'body'>
+  children: ReactNode;
+  content: Omit<Authors, "_id" | "_raw" | "body">;
 }
 
 export default function AuthorLayout({ children, content }: Props) {
-  const { name, avatar, occupation, company, email, twitter, bluesky, linkedin, github } = content
+  const {
+    name,
+    avatar,
+    occupation,
+    company,
+    email,
+    twitter,
+    bluesky,
+    linkedin,
+    github,
+  } = content;
 
   return (
     <>
@@ -19,8 +29,8 @@ export default function AuthorLayout({ children, content }: Props) {
             À propos
           </h1>
           <div className="mb-4 text-base font-semibold text-yellow-700 dark:text-yellow-300">
-            ⚠️ Ce blog est à caractère éducatif et toutes les techniques présentées sont réalisées
-            dans un cadre légal et autorisé.
+            ⚠️ Ce blog est à caractère éducatif et toutes les techniques
+            présentées sont réalisées dans un cadre légal et autorisé.
           </div>
         </div>
         <div className="items-start space-y-2 xl:grid xl:grid-cols-3 xl:space-y-0 xl:gap-x-8">
@@ -34,7 +44,9 @@ export default function AuthorLayout({ children, content }: Props) {
                 className="h-48 w-48 rounded-full"
               />
             )}
-            <h3 className="pt-4 pb-2 text-2xl leading-8 font-bold tracking-tight">{name}</h3>
+            <h3 className="pt-4 pb-2 text-2xl leading-8 font-bold tracking-tight">
+              {name}
+            </h3>
             <div className="text-gray-500 dark:text-gray-400">{occupation}</div>
             <div className="text-gray-500 dark:text-gray-400">{company}</div>
             <div className="flex space-x-3 pt-6">
@@ -51,5 +63,5 @@ export default function AuthorLayout({ children, content }: Props) {
         </div>
       </div>
     </>
-  )
+  );
 }
