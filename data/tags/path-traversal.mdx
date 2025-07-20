@@ -1,0 +1,37 @@
+---
+title: Path Traversal
+date: "2025-07-20"
+draft: false
+---
+
+# 📁 Path Traversal
+
+## Qu'est-ce que la traversée de répertoires ?
+
+La traversée de répertoires (Path Traversal) est une vulnérabilité qui permet à un attaquant d'accéder à des fichiers ou dossiers en dehors du répertoire prévu par l'application, en manipulant les chemins d'accès (ex : `../../etc/passwd`).
+
+## 🎯 Objectifs pédagogiques
+- Comprendre le fonctionnement d'une attaque path traversal
+- Savoir détecter et exploiter cette vulnérabilité
+
+## 📋 Exemples de scénarios et commandes
+- Accéder à des fichiers sensibles via une URL vulnérable
+- Exploiter un formulaire d'upload pour lire des fichiers système
+
+## 🛠️ Outils et commandes les plus utilisés
+- **curl / Burp Suite** : Tester les chemins d'accès
+- **wfuzz / ffuf** : Fuzzer les chemins vulnérables
+
+## 🛡️ Bonnes pratiques
+- Normaliser et valider les chemins d'accès côté serveur
+- Restreindre les permissions de lecture/écriture
+- Utiliser des fonctions sécurisées pour la gestion des fichiers
+
+## 📚 Ressources utiles
+- [OWASP - Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal)
+- [HackTricks - Path Traversal](https://book.hacktricks.xyz/pentesting-web/path-traversal)
+- [PayloadsAllTheThings - Path Traversal](https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/File%20Inclusion#path-traversal)
+
+---
+
+_Dernière mise à jour : 20 juillet 2025_ 
