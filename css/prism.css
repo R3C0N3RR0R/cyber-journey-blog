@@ -140,3 +140,8 @@
 .token.table {
   display: inline;
 }
+
+pre,
+.code-highlight {
+  @apply bg-gray-800 dark:bg-gray-700;
+}

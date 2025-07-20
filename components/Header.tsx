@@ -9,7 +9,7 @@ import SearchButton from "./SearchButton";
 
 const Header = () => {
   let headerClass =
-    "flex items-center w-full bg-gray-50 dark:bg-gray-900 justify-between py-10";
+    "flex items-center w-full bg-gray-50 dark:bg-black justify-between py-10";
   // let headerClass = 'flex items-center w-full bg-white dark:bg-black justify-between py-10'
   if (siteMetadata.stickyNav) {
     headerClass += " sticky top-0 z-50";

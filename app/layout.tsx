@@ -115,7 +115,7 @@ export default function RootLayout({
           href={`${basePath}/feed.xml`}
         />
       </head>
-      <body className="bg-gray-50 pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-900 dark:text-white">
+      <body className="bg-gray-50 pl-[calc(100vw-100%)] text-black antialiased dark:bg-black dark:text-white">
         {/* <body className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-950 dark:text-white"> */}
         <ThemeProviders>
           <Analytics
