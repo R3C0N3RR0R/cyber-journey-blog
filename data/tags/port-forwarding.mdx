@@ -1,0 +1,296 @@
+---
+title: Port Forwarding
+date: "2025-07-15"
+draft: false
+---
+
+# 🔄 Port Forwarding - Cheat Sheet
+
+## 🎯 Vue d'ensemble
+Le port forwarding permet de rediriger le trafic réseau d'un port vers un autre, facilitant l'accès aux services internes et contournant les restrictions de réseau.
+
+---
+
+## 🔍 Types de Port Forwarding
+
+### Local Port Forwarding
+```bash
+# Redirection locale simple
+# Pourquoi : Rediriger un port local vers un service distant
+ssh -L 8080:localhost:80 user@target.com
+# Accès: http://localhost:8080 -> http://target.com:80
+
+# Redirection avec port spécifique
+# Pourquoi : Rediriger vers un port spécifique sur la cible
+ssh -L 3306:localhost:3306 user@target.com
+# Accès: localhost:3306 -> target.com:3306 (MySQL)
+
+# Redirection vers une autre machine
+# Pourquoi : Rediriger vers un service sur une machine tierce
+ssh -L 8080:internal-server:80 user@target.com
+# Accès: localhost:8080 -> internal-server:80
+```
+
+### Remote Port Forwarding
+```bash
+# Redirection distante simple
+# Pourquoi : Exposer un service local sur la machine distante
+ssh -R 8080:localhost:80 user@target.com
+# Accès: target.com:8080 -> votre_machine:80
+
+# Redirection avec binding spécifique
+# Pourquoi : Contrôler l'interface de binding sur la cible
+ssh -R 0.0.0.0:8080:localhost:80 user@target.com
+# Accès: target.com:8080 -> votre_machine:80 (accessible depuis l'extérieur)
+```
+
+### Dynamic Port Forwarding
+```bash
+# Tunnel SOCKS dynamique
+# Pourquoi : Créer un proxy SOCKS pour contourner les restrictions
+ssh -D 1080 user@target.com
+# Utilisation: configurer le navigateur pour utiliser localhost:1080 comme proxy SOCKS
+
+# Tunnel avec port spécifique
+# Pourquoi : Utiliser un port personnalisé pour le tunnel SOCKS
+ssh -D 9050 user@target.com
+# Utilisation: configurer Tor Browser ou autres outils pour utiliser localhost:9050
+```
+
+---
+
+## 🛠️ Outils de Port Forwarding
+
+### SSH
+```bash
+# Installation et configuration SSH
+# Pourquoi : Utiliser SSH pour les tunnels sécurisés
+# Généralement pré-installé sur Linux/Unix
+# Sur Windows: OpenSSH ou PuTTY
+
+# Tunnel local avec SSH
+# Pourquoi : Créer un tunnel local sécurisé
+ssh -L 8080:localhost:80 -N user@target.com
+# -N: ne pas exécuter de commande distante
+
+# Tunnel distant avec SSH
+# Pourquoi : Exposer des services locaux sur la cible
+ssh -R 8080:localhost:80 -N user@target.com
+
+# Tunnel SOCKS avec SSH
+# Pourquoi : Créer un proxy SOCKS pour la navigation
+ssh -D 1080 -N user@target.com
+```
+
+### Netcat
+```bash
+# Port forwarding avec netcat
+# Pourquoi : Utiliser netcat pour des redirections simples
+# Redirection locale
+nc -l -p 8080 -c "nc localhost 80"
+
+# Redirection avec netcat
+# Pourquoi : Rediriger le trafic entre deux ports
+nc -l -p 8080 | nc localhost 80
+
+# Tunnel bidirectionnel
+# Pourquoi : Créer un tunnel bidirectionnel avec netcat
+mkfifo /tmp/pipe
+nc -l -p 8080 < /tmp/pipe | nc localhost 80 > /tmp/pipe
+```
+
+### Socat
+```bash
+# Installation de socat
+# Pourquoi : Outil puissant pour les redirections de ports
+sudo apt install socat
+# Ou
+sudo yum install socat
+
+# Redirection simple avec socat
+# Pourquoi : Rediriger un port vers un autre
+socat TCP-LISTEN:8080,fork TCP:localhost:80
+
+# Redirection avec options avancées
+# Pourquoi : Utiliser des options avancées pour plus de contrôle
+socat TCP-LISTEN:8080,reuseaddr,fork TCP:localhost:80
+
+# Tunnel SSL avec socat
+# Pourquoi : Créer un tunnel SSL pour le trafic chiffré
+socat TCP-LISTEN:8080,fork,reuseaddr SSL:localhost:443
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Port Forwarding avec Metasploit
+```bash
+# Port forwarding avec meterpreter
+# Pourquoi : Utiliser meterpreter pour les redirections avancées
+# Dans meterpreter
+portfwd add -l 8080 -p 80 -r target.com
+portfwd add -l 3306 -p 3306 -r internal-server.com
+
+# Liste des port forwards actifs
+# Pourquoi : Voir les redirections actives
+portfwd list
+
+# Suppression d'un port forward
+# Pourquoi : Supprimer une redirection spécifique
+portfwd delete -l 8080
+```
+
+### Port Forwarding avec Chisel
+```bash
+# Installation de Chisel
+# Pourquoi : Outil moderne pour les tunnels HTTP
+# Télécharger depuis: https://github.com/jpillora/chisel/releases
+
+# Serveur Chisel
+# Pourquoi : Démarrer le serveur Chisel sur la cible
+./chisel server -p 8080 --reverse
+
+# Client Chisel
+# Pourquoi : Connecter le client Chisel pour créer des tunnels
+./chisel client target.com:8080 R:8080:localhost:80
+./chisel client target.com:8080 R:3306:localhost:3306
+```
+
+### Port Forwarding avec Ngrok
+```bash
+# Installation de ngrok
+# Pourquoi : Exposer des services locaux sur Internet
+# Télécharger depuis: https://ngrok.com/
+
+# Exposition d'un service local
+# Pourquoi : Exposer un service local via ngrok
+ngrok http 80
+ngrok tcp 22
+
+# Exposition avec authentification
+# Pourquoi : Sécuriser l'exposition avec authentification
+ngrok http 80 --auth "username:password"
+```
+
+---
+
+## 🔧 Techniques de Contournement
+
+### Contournement de Firewall
+```bash
+# Tunnel SSH sur port non-standard
+# Pourquoi : Contourner les firewalls qui bloquent le port 22
+ssh -p 443 -L 8080:localhost:80 user@target.com
+
+# Tunnel via proxy HTTP
+# Pourquoi : Utiliser un proxy HTTP pour contourner les restrictions
+ssh -o ProxyCommand="nc -X connect -x proxy:8080 %h %p" user@target.com
+
+# Tunnel via SOCKS
+# Pourquoi : Utiliser un proxy SOCKS existant
+ssh -o ProxyCommand="nc -X 5 -x socks5:1080 %h %p" user@target.com
+```
+
+### Contournement de DPI
+```bash
+# Tunnel SSH avec obfuscation
+# Pourquoi : Contourner la détection de trafic SSH
+ssh -o ProxyCommand="nc -X connect -x proxy:8080 %h %p" -o ServerAliveInterval=60 user@target.com
+
+# Tunnel via HTTPS
+# Pourquoi : Masquer le trafic SSH dans du trafic HTTPS
+ssh -o ProxyCommand="nc -X connect -x proxy:8080 %h %p" user@target.com
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Persistance des Tunnels
+```bash
+# Tunnel SSH automatique
+# Pourquoi : Maintenir le tunnel SSH actif
+ssh -L 8080:localhost:80 -N -o ServerAliveInterval=60 user@target.com
+
+# Tunnel avec autossh
+# Pourquoi : Automatiquement reconnecter le tunnel en cas de déconnexion
+autossh -M 20000 -L 8080:localhost:80 user@target.com
+
+# Tunnel avec systemd
+# Pourquoi : Créer un service systemd pour le tunnel
+# Créer un fichier de service pour automatiser le tunnel
+```
+
+### Monitoring des Tunnels
+```bash
+# Vérification des tunnels actifs
+# Pourquoi : Voir les tunnels actifs sur le système
+netstat -tlnp | grep :8080
+ss -tlnp | grep :8080
+
+# Monitoring avec lsof
+# Pourquoi : Voir les processus utilisant des ports spécifiques
+lsof -i :8080
+lsof -i :3306
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Détection
+```bash
+# Surveillance des connexions SSH
+# Pourquoi : Détecter les tunnels SSH suspects
+tail -f /var/log/auth.log | grep ssh
+grep "ssh" /var/log/secure
+
+# Surveillance des ports
+# Pourquoi : Détecter les ports ouverts suspects
+netstat -tlnp | grep -E ":(8080|1080|9050)"
+ss -tlnp | grep -E ":(8080|1080|9050)"
+
+# Surveillance du trafic
+# Pourquoi : Détecter les patterns de trafic suspects
+tcpdump -i any -n | grep -E "(8080|1080|9050)"
+```
+
+### Mitigation
+```bash
+# Configuration SSH restrictive
+# Pourquoi : Limiter les capacités de tunneling SSH
+# Dans /etc/ssh/sshd_config
+AllowTcpForwarding no
+GatewayPorts no
+PermitTunnel no
+
+# Firewall rules
+# Pourquoi : Bloquer les ports suspects
+iptables -A INPUT -p tcp --dport 8080 -j DROP
+iptables -A INPUT -p tcp --dport 1080 -j DROP
+```
+
+### Configuration Sécurisée
+```bash
+# Exemple de configuration SSH sécurisée
+# Pourquoi : Configurer SSH pour limiter les tunnels
+# /etc/ssh/sshd_config
+AllowTcpForwarding no
+GatewayPorts no
+PermitTunnel no
+X11Forwarding no
+```
+
+---
+
+## 📚 Ressources
+
+- **SSH Port Forwarding** : https://www.ssh.com/academy/ssh/tunneling/example
+- **Chisel GitHub** : https://github.com/jpillora/chisel
+- **Ngrok** : https://ngrok.com/
+- **HackTricks Port Forwarding** : https://book.hacktricks.xyz/network-services-pentesting/pentesting-ssh/ssh-tunneling-and-port-forwarding
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

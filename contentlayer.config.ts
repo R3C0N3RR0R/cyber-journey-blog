@@ -18,6 +18,22 @@ import {
   remarkImgToJsx,
   extractTocHeadings,
 } from "pliny/mdx-plugins/index.js";
+
+// Plugin pour normaliser les fins de ligne
+const remarkNormalizeLineEndings = () => {
+  return (tree: any) => {
+    const visit = (node: any) => {
+      if (node.type === 'text' && node.value) {
+        // Remplacer tous les \r\n par \n
+        node.value = node.value.replace(/\r\n/g, '\n');
+      }
+      if (node.children) {
+        node.children.forEach(visit);
+      }
+    };
+    visit(tree);
+  };
+};
 // Rehype packages
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
@@ -153,9 +169,21 @@ export const Authors = defineDocumentType(() => ({
   computedFields,
 }));
 
+export const Tags = defineDocumentType(() => ({
+  name: "Tags",
+  filePathPattern: "tags/**/*.mdx",
+  contentType: "mdx",
+  fields: {
+    title: { type: "string", required: true },
+    date: { type: "date", required: true },
+    draft: { type: "boolean", default: false },
+  },
+  computedFields,
+}));
+
 export default makeSource({
   contentDirPath: "data",
-  documentTypes: [Blog, Authors],
+  documentTypes: [Blog, Authors, Tags],
   mdx: {
     cwd: process.cwd(),
     remarkPlugins: [
@@ -165,6 +193,7 @@ export default makeSource({
       remarkMath,
       remarkImgToJsx,
       remarkAlert,
+      remarkNormalizeLineEndings,
     ],
     rehypePlugins: [
       rehypeSlug,

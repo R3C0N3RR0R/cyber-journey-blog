@@ -3,8 +3,8 @@
   "malicious-file-upload": 1,
   "backup-file-exposure": 1,
   "credential-cracking": 1,
-  "remote-code-execution": 2,
-  "privilege-escalation": 1,
+  "remote-code-execution": 3,
+  "privilege-escalation": 2,
   "sudo-exploit": 2,
   "path-traversal": 1,
   "git-directory-leakage": 1,
@@ -12,5 +12,7 @@
   "shadow-credentials": 1,
   "esc16": 1,
   "kerberoasting": 1,
-  "bloodhound": 1
+  "bloodhound": 1,
+  "subdomain-enumeration": 1,
+  "port-forwarding": 1
 }

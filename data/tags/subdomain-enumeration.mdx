@@ -1,0 +1,289 @@
+---
+title: Subdomain Enumeration
+date: "2025-07-15"
+draft: false
+---
+
+# 🌐 Subdomain Enumeration - Cheat Sheet
+
+## 🎯 Vue d'ensemble
+L'énumération de sous-domaines permet de découvrir des sous-domaines cachés ou oubliés d'un domaine cible, révélant souvent des applications web, des services ou des points d'entrée supplémentaires.
+
+---
+
+## 🔍 Techniques de Découverte
+
+### Énumération Passive
+```bash
+# Recherche avec Certificate Transparency
+# Pourquoi : Découvrir les sous-domaines via les certificats SSL/TLS
+curl -s "https://crt.sh/?q=%.target.com&output=json" | jq -r '.[].name_value' | sort -u
+curl -s "https://crt.sh/?q=%.target.com" | grep -o 'DNS:.*' | cut -d':' -f2 | sort -u
+
+# Recherche avec VirusTotal
+# Pourquoi : Utiliser VirusTotal pour découvrir des sous-domaines
+curl -s "https://www.virustotal.com/vtapi/v2/domain/report?apikey=API_KEY&domain=target.com" | jq -r '.subdomains[]'
+
+# Recherche avec SecurityTrails
+# Pourquoi : Utiliser SecurityTrails pour l'historique des sous-domaines
+curl -s "https://api.securitytrails.com/v1/domain/target.com/subdomains?apikey=API_KEY" | jq -r '.subdomains[]'
+```
+
+### Énumération Active
+```bash
+# Bruteforce avec ffuf
+# Pourquoi : Tester des sous-domaines courants avec force brute
+ffuf -u https://FUZZ.target.com -w /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt -mc 200,204,301,302,307,401,403
+
+# Bruteforce avec gobuster
+# Pourquoi : Alternative à ffuf pour le bruteforce de sous-domaines
+gobuster dns -d target.com -w /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt
+
+# Bruteforce avec amass
+# Pourquoi : Outil complet pour l'énumération de sous-domaines
+amass enum -d target.com -brute -w /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt
+```
+
+---
+
+## 🛠️ Outils d'Énumération
+
+### Amass
+```bash
+# Installation d'Amass
+# Pourquoi : Installer l'outil Amass pour l'énumération complète
+sudo apt install amass
+# Ou via Go
+go install -v github.com/owasp-amass/amass/v4/...@master
+
+# Énumération passive
+# Pourquoi : Utiliser les sources passives pour découvrir des sous-domaines
+amass enum -passive -d target.com
+
+# Énumération active
+# Pourquoi : Utiliser des techniques actives pour découvrir des sous-domaines
+amass enum -active -d target.com -brute
+
+# Énumération complète
+# Pourquoi : Combiner toutes les techniques d'énumération
+amass enum -d target.com -brute -w wordlist.txt -active
+```
+
+### Subfinder
+```bash
+# Installation de Subfinder
+# Pourquoi : Outil rapide et efficace pour l'énumération de sous-domaines
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+# Énumération simple
+# Pourquoi : Découvrir des sous-domaines avec Subfinder
+subfinder -d target.com
+
+# Énumération avec wordlist
+# Pourquoi : Utiliser une wordlist personnalisée
+subfinder -d target.com -w wordlist.txt
+
+# Énumération avec résolution DNS
+# Pourquoi : Résoudre les sous-domaines trouvés
+subfinder -d target.com -silent | dnsx -a -resp-only
+```
+
+### Assetfinder
+```bash
+# Installation d'Assetfinder
+# Pourquoi : Outil simple pour l'énumération de sous-domaines
+go install github.com/tomnomnom/assetfinder@latest
+
+# Énumération avec Assetfinder
+# Pourquoi : Découvrir des sous-domaines via différentes sources
+assetfinder target.com
+
+# Énumération avec sous-domaines inclus
+# Pourquoi : Inclure les sous-domaines dans la recherche
+assetfinder --subs-only target.com
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Énumération DNS
+```bash
+# Recherche DNS avec dig
+# Pourquoi : Interroger directement les serveurs DNS
+dig axfr target.com @ns1.target.com
+dig ANY target.com
+dig TXT target.com
+
+# Recherche avec nslookup
+# Pourquoi : Alternative à dig pour les requêtes DNS
+nslookup -type=ANY target.com
+nslookup -type=TXT target.com
+
+# Recherche avec host
+# Pourquoi : Outil simple pour les requêtes DNS
+host -t ANY target.com
+host -t TXT target.com
+```
+
+### Énumération via les Moteurs de Recherche
+```bash
+# Recherche Google Dorks
+# Pourquoi : Utiliser Google pour découvrir des sous-domaines
+site:*.target.com
+site:*.target.com -www
+site:*.target.com -mail
+
+# Recherche avec Bing
+# Pourquoi : Utiliser Bing comme alternative à Google
+site:*.target.com
+site:*.target.com -www
+
+# Recherche avec Shodan
+# Pourquoi : Utiliser Shodan pour découvrir des services
+hostname:*.target.com
+ssl:"*.target.com"
+```
+
+### Énumération via les Réseaux Sociaux
+```bash
+# Recherche GitHub
+# Pourquoi : Découvrir des sous-domaines dans les repositories GitHub
+site:github.com "target.com"
+site:github.com "*.target.com"
+
+# Recherche avec Wayback Machine
+# Pourquoi : Utiliser l'historique web pour découvrir des sous-domaines
+curl -s "http://web.archive.org/cdx/search/cdx?url=*.target.com&output=json&fl=original&collapse=urlkey" | jq -r '.[]' | grep -o 'https://[^/]*' | sort -u
+```
+
+---
+
+## 🔧 Validation et Résolution
+
+### Résolution DNS
+```bash
+# Résolution avec dnsx
+# Pourquoi : Résoudre les sous-domaines trouvés
+echo "subdomain1.target.com" | dnsx -a -resp-only
+cat subdomains.txt | dnsx -a -resp-only
+
+# Résolution avec massdns
+# Pourquoi : Résolution DNS rapide et en masse
+massdns -r /usr/share/wordlists/resolvers.txt -t A -o S subdomains.txt
+
+# Résolution avec nslookup
+# Pourquoi : Résolution DNS simple et fiable
+nslookup subdomain.target.com
+```
+
+### Validation des Sous-domaines
+```bash
+# Vérification HTTP/HTTPS
+# Pourquoi : Vérifier si les sous-domaines sont accessibles via HTTP
+httpx -l subdomains.txt -status-code -title
+httpx -l subdomains.txt -mc 200,204,301,302,307,401,403
+
+# Vérification avec curl
+# Pourquoi : Tester manuellement les sous-domaines
+curl -I http://subdomain.target.com
+curl -I https://subdomain.target.com
+```
+
+---
+
+## 🎯 Post-Énumération
+
+### Analyse des Résultats
+```bash
+# Tri et nettoyage des résultats
+# Pourquoi : Organiser et nettoyer les sous-domaines trouvés
+cat subdomains.txt | sort -u > clean_subdomains.txt
+cat subdomains.txt | grep -v "^\s*$" | sort -u > clean_subdomains.txt
+
+# Analyse des patterns
+# Pourquoi : Identifier les patterns dans les noms de sous-domaines
+cat subdomains.txt | cut -d'.' -f1 | sort | uniq -c | sort -nr
+
+# Extraction des domaines uniques
+# Pourquoi : Extraire les domaines uniques pour analyse
+cat subdomains.txt | cut -d'.' -f2- | sort -u
+```
+
+### Découverte de Services
+```bash
+# Scan de ports sur les sous-domaines
+# Pourquoi : Découvrir les services sur les sous-domaines
+nmap -sS -p 80,443,8080,8443 subdomain.target.com
+
+# Scan avec masscan
+# Pourquoi : Scan rapide de ports sur de nombreux sous-domaines
+masscan -p 80,443,8080,8443 -iL subdomains.txt --rate 1000
+
+# Scan avec naabu
+# Pourquoi : Découverte de ports avec naabu
+naabu -l subdomains.txt -p 80,443,8080,8443
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Détection
+```bash
+# Surveillance des requêtes DNS
+# Pourquoi : Détecter les tentatives d'énumération DNS
+tail -f /var/log/dns.log | grep "target.com"
+grep "target.com" /var/log/bind/query.log
+
+# Surveillance des accès web
+# Pourquoi : Détecter les tentatives d'accès aux sous-domaines
+tail -f /var/log/apache2/access.log | grep "target.com"
+grep "target.com" /var/log/nginx/access.log
+```
+
+### Mitigation
+```bash
+# Configuration DNS sécurisée
+# Pourquoi : Configurer DNS pour limiter l'énumération
+# Désactiver le transfert de zone
+# Limiter les requêtes récursives
+# Utiliser des rate limiting
+
+# Configuration web
+# Pourquoi : Configurer les serveurs web pour limiter l'énumération
+# Redirection des sous-domaines inexistants
+# Rate limiting sur les requêtes
+# Monitoring des accès
+```
+
+### Configuration Sécurisée
+```bash
+# Exemple de configuration Apache
+# Pourquoi : Configurer Apache pour gérer les sous-domaines
+<VirtualHost *:80>
+    ServerName *.target.com
+    Redirect 404 /
+</VirtualHost>
+
+# Exemple de configuration nginx
+# Pourquoi : Configurer nginx pour gérer les sous-domaines
+server {
+    listen 80;
+    server_name ~^.*\.target\.com$;
+    return 404;
+}
+```
+
+---
+
+## 📚 Ressources
+
+- **Amass GitHub** : https://github.com/owasp-amass/amass
+- **Subfinder GitHub** : https://github.com/projectdiscovery/subfinder
+- **Assetfinder GitHub** : https://github.com/tomnomnom/assetfinder
+- **HackTricks Subdomain Enumeration** : https://book.hacktricks.xyz/pentesting-web/recon/subdomain-enumeration
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

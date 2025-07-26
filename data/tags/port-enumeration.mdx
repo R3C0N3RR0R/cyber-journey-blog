@@ -4,56 +4,291 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 🔎 Port Enumeration
+# 🔍 Port Enumeration - Cheat Sheet
 
-## Qu'est-ce que l'énumération de ports ?
+## 🎯 Vue d'ensemble
+L'énumération de ports permet d'identifier les services actifs sur une cible et de découvrir les vecteurs d'attaque potentiels.
 
-L'énumération de ports consiste à scanner les ports d'une machine pour identifier les services actifs et détecter d'éventuelles failles.
+---
 
-## 🎯 Objectifs pédagogiques
+## 🛠️ Outils de Base
 
-- Comprendre l'intérêt de l'énumération de ports
-- Savoir utiliser des outils de scan de ports
+### Nmap - Scanner Principal
+```bash
+# Scan de base
+nmap -sC -sV TARGET_IP
 
-## 📋 Exemples de scénarios et commandes
+# Scan rapide des ports communs
+nmap -F TARGET_IP
 
-- Scanner les ports avec Nmap :
-  ```bash
-  nmap -sS -p- 10.10.10.10
-  ```
-- Identifier les services derrière les ports ouverts
-- Exploiter un service vulnérable découvert lors du scan
+# Scan complet de tous les ports
+nmap -p- TARGET_IP
 
-## 🛡️ Bonnes pratiques
+# Scan avec timing agressif
+nmap -T4 -A TARGET_IP
 
-- Restreindre l'accès aux ports non utilisés
-- Mettre à jour les services exposés
-- Surveiller les tentatives de scan
+# Scan UDP
+nmap -sU TARGET_IP
+```
 
-## 🛠️ Outils et commandes les plus utilisés
+### Nmap - Scripts Spécialisés
+```bash
+# Scripts de vulnérabilités
+nmap --script vuln TARGET_IP
 
-- **nmap** :
-  ```bash
-  nmap -sS -p- -T4 10.10.10.10
-  nmap -sV -A 10.10.10.10
-  ```
-- **masscan** : Scan très rapide de tous les ports
-  ```bash
-  masscan -p1-65535 10.10.10.10 --rate=10000
-  ```
-- **netcat** : Vérification manuelle d'un port
-  ```bash
-  nc -vz 10.10.10.10 80
-  ```
-- **rustscan** : Alternative rapide à nmap
-  ```bash
-  rustscan -a 10.10.10.10
-  ```
+# Scripts de services spécifiques
+nmap --script http-enum TARGET_IP
+nmap --script smb-enum-shares TARGET_IP
+nmap --script ftp-anon TARGET_IP
 
-## 📚 Ressources utiles
+# Scripts de découverte
+nmap --script discovery TARGET_IP
+nmap --script broadcast TARGET_IP
+```
 
-- [Nmap - Guide](https://nmap.org/book/)
-- [HackTricks - Port Scanning](https://book.hacktricks.xyz/network-services-pentesting/tcp-port-scanning)
+---
+
+## 🔍 Énumération par Service
+
+### Web (Ports 80, 443, 8080, 8443)
+```bash
+# Énumération des répertoires
+gobuster dir -u http://TARGET_IP -w /usr/share/wordlists/dirb/common.txt
+feroxbuster -u http://TARGET_IP -w /usr/share/wordlists/dirb/common.txt
+
+# Énumération des sous-domaines
+gobuster vhost -u http://TARGET_IP -w /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt
+ffuf -u http://TARGET_IP -H "Host: FUZZ.TARGET_IP" -w wordlist.txt
+
+# Énumération des fichiers
+gobuster dir -u http://TARGET_IP -w /usr/share/wordlists/dirb/common.txt -x php,html,txt,js
+```
+
+### SMB (Ports 139, 445)
+```bash
+# Énumération des partages
+smbclient -L //TARGET_IP
+smbmap -H TARGET_IP
+crackmapexec smb TARGET_IP --shares
+
+# Connexion anonyme
+smbclient //TARGET_IP/SHARE -N
+smbclient //TARGET_IP/SHARE -U ""
+
+# Énumération des utilisateurs
+enum4linux TARGET_IP
+rpcclient -U "" TARGET_IP
+```
+
+### SSH (Port 22)
+```bash
+# Test de connexion
+ssh -o ConnectTimeout=5 TARGET_IP
+
+# Énumération des clés publiques
+ssh-keyscan TARGET_IP
+
+# Test de brute force
+hydra -l username -P wordlist.txt TARGET_IP ssh
+medusa -h TARGET_IP -U userlist.txt -P passlist.txt -M ssh
+```
+
+### FTP (Port 21)
+```bash
+# Connexion anonyme
+ftp TARGET_IP
+# Username: anonymous
+# Password: anonymous
+
+# Énumération avec nmap
+nmap --script ftp-anon TARGET_IP
+nmap --script ftp-syst TARGET_IP
+
+# Test de brute force
+hydra -l username -P wordlist.txt TARGET_IP ftp
+```
+
+---
+
+## 🔧 Outils Avancés
+
+### Masscan - Scan Rapide
+```bash
+# Scan rapide de tous les ports
+masscan TARGET_IP -p0-65535 --rate=1000
+
+# Scan de ports spécifiques
+masscan TARGET_IP -p21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080
+
+# Scan de plage d'IPs
+masscan 192.168.1.0/24 -p80,443,22,21
+```
+
+### Rustscan - Alternative Rapide
+```bash
+# Scan rapide
+rustscan -a TARGET_IP
+
+# Scan avec nmap
+rustscan -a TARGET_IP -- -sC -sV
+
+# Scan de plage
+rustscan -a 192.168.1.0/24
+```
+
+### Netcat - Tests Manuels
+```bash
+# Test de connexion
+nc -zv TARGET_IP 22
+nc -zv TARGET_IP 80
+
+# Banner grabbing
+nc TARGET_IP 22
+nc TARGET_IP 80
+
+# Test de service
+echo "GET / HTTP/1.1\r\nHost: TARGET_IP\r\n\r\n" | nc TARGET_IP 80
+```
+
+---
+
+## 🎯 Énumération Spécialisée
+
+### Services de Base de Données
+```bash
+# MySQL (Port 3306)
+mysql -h TARGET_IP -u root -p
+nmap --script mysql-enum TARGET_IP
+
+# PostgreSQL (Port 5432)
+psql -h TARGET_IP -U postgres
+nmap --script pgsql-brute TARGET_IP
+
+# MongoDB (Port 27017)
+mongo TARGET_IP:27017
+nmap --script mongodb-info TARGET_IP
+```
+
+### Services de Messagerie
+```bash
+# SMTP (Port 25)
+telnet TARGET_IP 25
+nmap --script smtp-enum-users TARGET_IP
+
+# POP3 (Port 110)
+telnet TARGET_IP 110
+nmap --script pop3-brute TARGET_IP
+
+# IMAP (Port 143)
+telnet TARGET_IP 143
+nmap --script imap-brute TARGET_IP
+```
+
+### Services RPC
+```bash
+# RPC (Port 111)
+rpcinfo -p TARGET_IP
+nmap --script rpc-grind TARGET_IP
+
+# NFS (Port 2049)
+showmount -e TARGET_IP
+nmap --script nfs-showmount TARGET_IP
+```
+
+---
+
+## 🔍 Énumération Web Avancée
+
+### Technologies Web
+```bash
+# Détection de technologies
+whatweb TARGET_IP
+wappalyzer TARGET_IP
+
+# Énumération des API
+gobuster dir -u http://TARGET_IP/api -w /usr/share/wordlists/dirb/common.txt
+ffuf -u http://TARGET_IP/api/FUZZ -w wordlist.txt
+```
+
+### Énumération des VHosts
+```bash
+# Énumération des hôtes virtuels
+gobuster vhost -u http://TARGET_IP -w /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt
+ffuf -u http://TARGET_IP -H "Host: FUZZ.TARGET_IP" -w wordlist.txt -fs 178
+```
+
+### Énumération des Paramètres
+```bash
+# Énumération des paramètres
+arjun -u http://TARGET_IP
+paramspider -d TARGET_IP
+```
+
+---
+
+## 📊 Analyse des Résultats
+
+### Tri et Filtrage
+```bash
+# Extraire les ports ouverts
+nmap -p- TARGET_IP | grep "open" | cut -d'/' -f1
+
+# Lister les services par port
+nmap -sV TARGET_IP | grep -E "(open|tcp|udp)"
+
+# Sauvegarder les résultats
+nmap -sC -sV TARGET_IP -oN scan_results.txt
+nmap -sC -sV TARGET_IP -oX scan_results.xml
+```
+
+### Visualisation
+```bash
+# Générer un rapport HTML
+nmap -sC -sV TARGET_IP -oA scan_report
+
+# Convertir en rapport
+xsltproc scan_report.xml -o scan_report.html
+```
+
+---
+
+## 🛡️ Évasion de Détection
+
+### Techniques de Furtivité
+```bash
+# Scan lent
+nmap -T1 TARGET_IP
+
+# Scan fragmenté
+nmap -f TARGET_IP
+
+# Scan avec délai
+nmap --scan-delay 1s TARGET_IP
+
+# Scan avec source aléatoire
+nmap -S RANDOM_IP TARGET_IP
+```
+
+### Bypass de Firewall
+```bash
+# Scan avec source port
+nmap --source-port 53 TARGET_IP
+
+# Scan avec MTU
+nmap --mtu 16 TARGET_IP
+
+# Scan avec options TCP
+nmap --tcp-options TARGET_IP
+```
+
+---
+
+## 📚 Ressources
+
+- **Nmap Documentation** : https://nmap.org/docs.html
+- **SecLists** : https://github.com/danielmiessler/SecLists
+- **HackTricks Port Enumeration** : https://book.hacktricks.xyz/network-services-pentesting/pentesting-network
+- **Nmap Scripts** : https://nmap.org/nsedoc/
 
 ---
 

