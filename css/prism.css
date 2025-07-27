@@ -145,3 +145,98 @@ pre,
 .code-highlight {
   @apply bg-gray-800 dark:bg-gray-700;
 }
+
+/* S'assurer que les styles Prism s'appliquent aux blocs de code dans les pages de tags */
+.prose pre {
+  @apply bg-gray-800 dark:bg-gray-700;
+}
+
+/* Forcer l'application des styles de tokens Prism dans les pages de tags */
+.prose pre .token.comment,
+.prose pre .token.prolog,
+.prose pre .token.cdata {
+  color: rgb(99, 119, 119) !important;
+  font-style: italic;
+}
+
+.prose pre .token.punctuation {
+  color: rgb(199, 146, 234) !important;
+}
+
+.prose pre .namespace {
+  color: rgb(178, 204, 214) !important;
+}
+
+.prose pre .token.deleted {
+  color: rgba(239, 83, 80, 0.56) !important;
+  font-style: italic;
+}
+
+.prose pre .token.symbol,
+.prose pre .token.property {
+  color: rgb(128, 203, 196) !important;
+}
+
+.prose pre .token.tag,
+.prose pre .token.operator,
+.prose pre .token.keyword {
+  color: rgb(127, 219, 202) !important;
+}
+
+.prose pre .token.boolean {
+  color: rgb(255, 88, 116) !important;
+}
+
+.prose pre .token.number {
+  color: rgb(247, 140, 108) !important;
+}
+
+.prose pre .token.constant,
+.prose pre .token.function,
+.prose pre .token.builtin,
+.prose pre .token.char {
+  color: rgb(130, 170, 255) !important;
+}
+
+.prose pre .token.selector,
+.prose pre .token.doctype {
+  color: rgb(199, 146, 234) !important;
+  font-style: italic;
+}
+
+.prose pre .token.attr-name,
+.prose pre .token.inserted {
+  color: rgb(173, 219, 103) !important;
+  font-style: italic;
+}
+
+.prose pre .token.string,
+.prose pre .token.url,
+.prose pre .token.entity,
+.prose pre .language-css .token.string,
+.prose pre .style .token.string {
+  color: rgb(173, 219, 103) !important;
+}
+
+.prose pre .token.class-name,
+.prose pre .token.atrule,
+.prose pre .token.attr-value {
+  color: rgb(255, 203, 139) !important;
+}
+
+.prose pre .token.regex,
+.prose pre .token.important,
+.prose pre .token.variable {
+  color: rgb(214, 222, 235) !important;
+}
+
+.prose pre .token.important,
+.prose pre .token.bold {
+  font-weight: bold !important;
+}
+
+.prose pre .token.italic {
+  font-style: italic !important;
+}
+
+
