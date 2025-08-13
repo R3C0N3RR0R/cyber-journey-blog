@@ -1,3 +1,9 @@
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.md text eol=lf
+*.mdx text eol=lf
 ## Source: https://github.com/alexkaratarakis/gitattributes
 ## Modified * text=auto to * text=auto eol=lf eol=lf to force LF endings.
 

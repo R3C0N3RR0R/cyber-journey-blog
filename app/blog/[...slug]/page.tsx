@@ -112,8 +112,13 @@ export default async function Page(props: {
     };
   });
 
-  const layoutKey = (post.layout || defaultLayout) as keyof typeof layouts;
-  const Layout = layouts[layoutKey];
+  const rawLayout = post.layout || defaultLayout;
+  const normalizedLayout = (
+    typeof rawLayout === "string"
+      ? (rawLayout as string).replace(/\r/g, "").trim()
+      : defaultLayout
+  ) as keyof typeof layouts;
+  const Layout = layouts[normalizedLayout] || layouts[defaultLayout];
 
   return (
     <>

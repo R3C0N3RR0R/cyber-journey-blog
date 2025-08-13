@@ -1,8 +1,8 @@
 # Script pour normaliser les fins de ligne dans tous les fichiers MDX
 Write-Host "Normalisation des fins de ligne dans les fichiers MDX..." -ForegroundColor Green
 
-# Fonction pour normaliser un fichier
-function Normalize-File {
+# Fonction pour définir les fins de ligne d'un fichier au format LF (verbe approuvé)
+function Set-LineEnding {
     param([string]$FilePath)
     
     try {
@@ -24,7 +24,7 @@ function Normalize-File {
 $mdxFiles = Get-ChildItem -Path "data" -Filter "*.mdx" -Recurse
 
 foreach ($file in $mdxFiles) {
-    Normalize-File $file.FullName
+    Set-LineEnding $file.FullName
 }
 
 Write-Host "`nNormalisation terminée!" -ForegroundColor Green

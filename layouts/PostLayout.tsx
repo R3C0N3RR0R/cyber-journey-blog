@@ -63,6 +63,33 @@ export default function PostLayout({
               <div>
                 <PageTitle>{title}</PageTitle>
               </div>
+              {/* Hero image harmonisée */}
+              {(() => {
+                const imageList = Array.isArray(content.images)
+                  ? (content.images as string[])
+                  : content.images
+                    ? [content.images as unknown as string]
+                    : [];
+                const displayImageRaw =
+                  imageList.length > 0
+                    ? imageList[0]
+                    : siteMetadata.socialBanner;
+                const displayImage =
+                  typeof displayImageRaw === "string"
+                    ? displayImageRaw.trim()
+                    : displayImageRaw;
+                return (
+                  <div className="w-full pt-6 flex justify-center">
+                    <Image
+                      src={displayImage}
+                      alt={title}
+                      width={250}
+                      height={250}
+                      className="object-cover rounded-md"
+                    />
+                  </div>
+                );
+              })()}
             </div>
           </header>
           <div className="grid-rows-[auto_1fr] divide-y divide-gray-200 pb-8 xl:grid xl:grid-cols-4 xl:gap-x-6 xl:divide-y-0 dark:divide-gray-700">

@@ -1,6 +1,5 @@
 import { ReactNode } from "react";
 import Image from "@/components/Image";
-import Bleed from "pliny/ui/Bleed";
 import { CoreContent } from "pliny/utils/contentlayer";
 import type { Blog } from "contentlayer/generated";
 import Comments from "@/components/Comments";
@@ -17,7 +16,7 @@ interface LayoutProps {
   prev?: { path: string; title: string };
 }
 
-export default function PostMinimal({
+export default function PostBanner({
   content,
   next,
   prev,
@@ -35,17 +34,14 @@ export default function PostMinimal({
       <article>
         <div>
           <div className="space-y-1 pb-10 text-center dark:border-gray-700">
-            <div className="w-full">
-              <Bleed>
-                <div className="relative aspect-2/1 w-full">
-                  <Image
-                    src={displayImage}
-                    alt={title}
-                    fill
-                    className="object-cover"
-                  />
-                </div>
-              </Bleed>
+            <div className="w-full pt-6 flex justify-center">
+              <Image
+                src={displayImage}
+                alt={title}
+                width={250}
+                height={250}
+                className="object-cover rounded-md"
+              />
             </div>
             <div className="relative pt-10">
               <PageTitle>{title}</PageTitle>
