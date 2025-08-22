@@ -1,12 +1,12 @@
 {
-  "port-enumeration": 2,
+  "port-enumeration": 3,
   "malicious-file-upload": 1,
   "backup-file-exposure": 1,
-  "credential-cracking": 1,
-  "remote-code-execution": 5,
-  "privilege-escalation": 4,
+  "credential-cracking": 2,
+  "remote-code-execution": 6,
+  "privilege-escalation": 5,
   "sudo-exploit": 3,
-  "path-traversal": 1,
+  "path-traversal": 2,
   "git-directory-leakage": 1,
   "rce": 1,
   "ntlm-relay": 1,
@@ -14,7 +14,7 @@
   "esc16": 1,
   "kerberoasting": 1,
   "bloodhound": 1,
+  "port-forwarding": 2,
   "symlink-attack": 1,
-  "subdomain-enumeration": 1,
-  "port-forwarding": 1
+  "subdomain-enumeration": 1
 }

