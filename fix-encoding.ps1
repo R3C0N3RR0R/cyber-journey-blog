@@ -2,7 +2,7 @@
 Write-Host "Correction de l'encodage UTF-8 des fichiers MDX..." -ForegroundColor Green
 
 # Fonction pour corriger l'encodage d'un fichier
-function Fix-Encoding {
+function Repair-Encoding {
     param([string]$FilePath)
     
     try {
@@ -49,8 +49,8 @@ function Fix-Encoding {
 $mdxFiles = Get-ChildItem -Path "data" -Filter "*.mdx" -Recurse
 
 foreach ($file in $mdxFiles) {
-    Fix-Encoding $file.FullName
+    Repair-Encoding $file.FullName
 }
 
-Write-Host "`nCorrection d'encodage terminée!" -ForegroundColor Green
-Write-Host "Vous pouvez maintenant redémarrer votre serveur de développement." -ForegroundColor Cyan 
+Write-Host "`nCorrection d'encodage terminee!" -ForegroundColor Green
+Write-Host "Vous pouvez maintenant redemarrer votre serveur de developpement." -ForegroundColor Cyan 
