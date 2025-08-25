@@ -1,0 +1,140 @@
+---
+title: GPG
+date: "2025-08-25"
+draft: false
+---
+
+# 🔐 GPG — Déchiffrement : guide rapide
+
+## 🎯 L’essentiel
+
+- **GPG**: un outil pour protéger des fichiers/messages.
+- Deux modes principaux:
+  - **Symétrique**: un mot de passe unique sert à chiffrer et à déchiffrer.
+  - **Asymétrique**: chiffré pour une personne avec sa clé publique; seul sa clé privée peut déchiffrer.
+
+---
+
+## 🔎 Avant de commencer: identifier votre fichier
+
+- Extensions fréquentes: `.gpg`, `.pgp`, `.asc` (texte lisible) — les commandes sont les mêmes.
+- Si on vous a donné un **mot de passe**, c’est probablement du symétrique.
+- Si on vous a « envoyé pour vous » sans mot de passe, c’est probablement de l’asymétrique (il vous faut votre **clé privée**).
+
+---
+
+## 🟢 Cas 1 — Déchiffrer avec un mot de passe (symétrique)
+
+1. Lancez le déchiffrement (vous serez invité à entrer le mot de passe):
+
+```bash
+gpg -d secret.gpg
+```
+
+2. Pour enregistrer directement le résultat dans un fichier:
+
+```bash
+gpg -o secret.txt -d secret.gpg
+```
+
+Astuce: pour un fichier `.asc` (texte), utilisez aussi `-d` de la même façon.
+
+---
+
+## 🔵 Cas 2 — Déchiffrer « pour vous » (asymétrique)
+
+Vous devez posséder la **clé privée** correspondant à votre **clé publique** utilisée pour chiffrer.
+
+1. Importer votre clé privée (si ce n’est pas déjà fait):
+
+```bash
+gpg --import ma_cle_privee.asc
+```
+
+2. Vérifier que GPG voit bien vos clés:
+
+```bash
+gpg --list-keys
+gpg --list-secret-keys
+```
+
+3. Déchiffrer le fichier:
+
+```bash
+gpg -o message.txt -d message.gpg
+```
+
+Si une passphrase protège votre clé privée, GPG vous la demandera.
+
+---
+
+## 🟠 Cas 3 — Vos clés sont dans un dossier séparé
+
+Utilisez `--homedir` pour dire à GPG où sont vos clés, et assurez-vous des bonnes permissions:
+
+```bash
+mkdir -p /tmp/gpg_env && chmod 700 /tmp/gpg_env
+# Copiez vos fichiers de clés dans /tmp/gpg_env si besoin
+gpg --homedir /tmp/gpg_env --list-secret-keys
+gpg --homedir /tmp/gpg_env -o out.txt -d fichier.gpg
+```
+
+---
+
+## 🤖 (Optionnel) Mode non interactif / automatisation
+
+Utile pour des scripts (à manipuler avec précaution):
+
+```bash
+gpg --batch --yes --pinentry-mode loopback --passphrase 'VotrePassphrase' \
+  -o out.txt -d secret.gpg
+
+# Variante: éviter la passphrase en clair dans la ligne de commande
+echo 'VotrePassphrase' | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+  -o out.txt -d secret.gpg
+```
+
+---
+
+## 🩺 Dépannage simple
+
+- « decryption failed: No secret key »
+  - Cas asymétrique: vous n’avez pas la bonne clé privée. Importez-la puis réessayez.
+  - Cas symétrique: entrez le bon mot de passe (pas besoin de clé).
+  - Pour comprendre à qui le fichier est destiné:
+
+```bash
+gpg -vv -d fichier.gpg |& grep -i keyid
+```
+
+- « Bad session key » / « Wrong secret key »
+  - Mauvaise clé ou mauvais mot de passe, ou mauvais dossier de clés (`--homedir`).
+  - Redémarrer l’agent peut aider:
+
+```bash
+gpgconf --kill gpg-agent
+```
+
+- « unsafe ownership on homedir » (permissions incorrectes)
+
+```bash
+chmod 700 dossier_gpg
+chmod 600 dossier_gpg/private-keys-v1.d/* 2>/dev/null || true
+chmod 644 dossier_gpg/pubring.kbx 2>/dev/null || true
+```
+
+- Résultat illisible à l’écran? Écrivez dans un fichier:
+
+```bash
+gpg -o resultat.txt -d fichier.gpg
+```
+
+---
+
+## ✅ Bonnes pratiques
+
+- Ne tapez pas votre passphrase dans des commandes qui seront enregistrées dans l’historique; préférez `read -s` ou `passphrase-fd`.
+- Protégez vos clés: dossier en `700`, clés privées en `600`.
+- Nettoyez les fichiers sensibles après usage.
+
+_Dernière mise à jour : 25 août 2025_
