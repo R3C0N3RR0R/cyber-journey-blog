@@ -8,6 +8,7 @@ import TableWrapper from "./TableWrapper";
 
 export const components: MDXComponents = {
   Image,
+  img: Image,
   TOCInline,
   a: CustomLink,
   pre: Pre,

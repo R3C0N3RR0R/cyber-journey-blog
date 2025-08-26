@@ -9,6 +9,7 @@ import SectionContainer from "@/components/SectionContainer";
 import siteMetadata from "@/data/siteMetadata";
 import Image from "@/components/Image";
 import ScrollTopAndComment from "@/components/ScrollTopAndComment";
+import GlobalImageZoom from "@/components/GlobalImageZoom";
 
 interface LayoutProps {
   content: CoreContent<Blog>;
@@ -142,6 +143,7 @@ export default function PostLayout({
           </div>
         </div>
       </article>
+      <GlobalImageZoom />
     </SectionContainer>
   );
 }

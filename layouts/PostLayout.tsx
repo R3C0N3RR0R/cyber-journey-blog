@@ -9,6 +9,7 @@ import Image from "@/components/Image";
 import Tag from "@/components/Tag";
 import siteMetadata from "@/data/siteMetadata";
 import ScrollTopAndComment from "@/components/ScrollTopAndComment";
+import GlobalImageZoom from "@/components/GlobalImageZoom";
 
 const editUrl = (path: string) =>
   `${siteMetadata.siteRepo}/blob/main/data/${path}`;
@@ -200,6 +201,7 @@ export default function PostLayout({
           </div>
         </div>
       </article>
+      <GlobalImageZoom />
     </SectionContainer>
   );
 }
