@@ -53,7 +53,14 @@ function fixEncoding(filePath) {
       'Ãƒ»': 'Û',
       'Ãƒ¢': 'Â',
       'Ãƒª': 'Ê',
-      'Ãƒ®': 'Î'
+      'Ãƒ®': 'Î',
+      // Caractères spéciaux supplémentaires
+      'âš ï¸': '⚠️',
+      'â†': '→',
+      'oÃ¹': 'où',
+      'Ã¢': 'â',
+      'Ã­': 'í',
+      'Ã ': 'à'
     };
     
     let hasChanges = false;

@@ -18,7 +18,24 @@ export default async function Page(props: {
   params: Promise<{ page: string }>;
 }) {
   const params = await props.params;
-  const posts = allCoreContent(sortPosts(allBlogs));
+  const sortedPosts = sortPosts(allBlogs);
+  // Utiliser directement les posts sans allCoreContent pour conserver summary
+  const posts = sortedPosts
+    .filter((post) => !post.draft)
+    .map((post) => ({
+      slug: post.slug,
+      date: post.date,
+      title: post.title,
+      summary: post.summary,
+      tags: post.tags,
+      images: post.images,
+      path: post.path,
+      type: post.type,
+      readingTime: post.readingTime,
+      filePath: post.filePath,
+      toc: post.toc,
+      structuredData: post.structuredData,
+    }));
   const pageNumber = parseInt(params.page as string);
   const totalPages = Math.ceil(posts.length / POSTS_PER_PAGE);
 
