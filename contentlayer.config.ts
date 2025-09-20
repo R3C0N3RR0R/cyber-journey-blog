@@ -22,17 +22,18 @@ import {
 // Plugin pour normaliser les fins de ligne
 const remarkNormalizeLineEndings = () => {
   return (tree: unknown) => {
-    const visit = (node: {
-      type?: string;
-      value?: string;
-      children?: unknown[];
-    }) => {
-      if (node.type === "text" && node.value) {
+    const visit = (node: unknown): void => {
+      const typedNode = node as {
+        type?: string;
+        value?: string;
+        children?: unknown[];
+      };
+      if (typedNode.type === "text" && typedNode.value) {
         // Remplacer tous les \r\n par \n
-        node.value = node.value.replace(/\r\n/g, "\n");
+        typedNode.value = typedNode.value.replace(/\r\n/g, "\n");
       }
-      if (node.children) {
-        node.children.forEach(visit);
+      if (typedNode.children) {
+        typedNode.children.forEach(visit);
       }
     };
     visit(tree);
@@ -89,9 +90,10 @@ const computedFields: ComputedFields = {
 async function createTagCount(allBlogs: unknown[], allChallenges: unknown[]) {
   const tagCount: Record<string, number> = {};
   const allPosts = [...allBlogs, ...allChallenges];
-  allPosts.forEach((file: { tags?: string[]; draft?: boolean }) => {
-    if (file.tags && (!isProduction || file.draft !== true)) {
-      file.tags.forEach((tag: string) => {
+  allPosts.forEach((file: unknown) => {
+    const typedFile = file as { tags?: string[]; draft?: boolean };
+    if (typedFile.tags && (!isProduction || typedFile.draft !== true)) {
+      typedFile.tags.forEach((tag: string) => {
         const formattedTag = slug(tag);
         if (formattedTag in tagCount) {
           tagCount[formattedTag] += 1;
@@ -115,7 +117,7 @@ function createSearchIndex(allBlogs: unknown[], allChallenges: unknown[]) {
     const allPosts = [...allBlogs, ...allChallenges];
     writeFileSync(
       `public/${path.basename(siteMetadata.search.kbarConfig.searchDocumentsPath)}`,
-      JSON.stringify(allCoreContent(sortPosts(allPosts))),
+      JSON.stringify(allCoreContent(sortPosts(allPosts as never[]))),
     );
     console.log("Local search index generated...");
   }

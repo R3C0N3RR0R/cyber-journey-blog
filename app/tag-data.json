@@ -18,10 +18,5 @@
   "bloodhound": 1,
   "port-forwarding": 2,
   "symlink-attack": 1,
-  "subdomain-enumeration": 1,
-  "reverse-engineering": 1,
-  "assembly": 1,
-  "htb": 1,
-  "binary-analysis": 1,
-  "syscalls": 1
+  "subdomain-enumeration": 1
 }
