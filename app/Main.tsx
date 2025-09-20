@@ -4,11 +4,11 @@ import siteMetadata from "@/data/siteMetadata";
 import { formatDate } from "pliny/utils/formatDate";
 import NewsletterForm from "pliny/ui/NewsletterForm";
 import type { CoreContent } from "pliny/utils/contentlayer";
-import type { Blog } from "contentlayer/generated";
+import type { Blog, Challenge } from "contentlayer/generated";
 import Image from "next/image";
 
 interface HomeProps {
-  posts: CoreContent<Blog>[];
+  posts: CoreContent<Blog | Challenge>[];
 }
 
 const MAX_DISPLAY = 5;
@@ -28,12 +28,16 @@ export default function Home({ posts }: HomeProps) {
         <ul className="divide-y divide-gray-200 dark:divide-gray-700">
           {!posts.length && "No posts found."}
           {posts.slice(0, MAX_DISPLAY).map((post) => {
-            const { slug, date, title, summary, tags, images } = post;
+            const { slug, date, title, summary, tags, images, path } = post;
             // On prend la première image si elle existe, sinon une image par défaut
             const displayImage =
               images && images.length > 0
                 ? images[0]
                 : "/static/images/logo.png";
+
+            // Construire l'URL correcte selon le type de post
+            const postUrl = path ? `/${path}` : `/blog/${slug}`;
+
             return (
               <li key={slug} className="py-12">
                 <article>
@@ -59,7 +63,7 @@ export default function Home({ posts }: HomeProps) {
                         <div>
                           <h2 className="text-2xl leading-8 font-bold tracking-tight">
                             <Link
-                              href={`/blog/${slug}`}
+                              href={postUrl}
                               className="text-gray-900 dark:text-gray-100"
                             >
                               {title}
@@ -77,7 +81,7 @@ export default function Home({ posts }: HomeProps) {
                       </div>
                       <div className="text-base leading-6 font-medium">
                         <Link
-                          href={`/blog/${slug}`}
+                          href={postUrl}
                           // className="text-green-400 hover:text-primary-600 dark:hover:text-primary-400"
                           style={{ color: "#8ac13c" }}
                           aria-label={`Voir plus : "${title}"`}

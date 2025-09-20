@@ -1,9 +1,11 @@
 import { sortPosts } from "pliny/utils/contentlayer";
-import { allBlogs } from "contentlayer/generated";
+import { allBlogs, allChallenges } from "contentlayer/generated";
 import Main from "./Main";
 
 export default async function Page() {
-  const sortedPosts = sortPosts(allBlogs);
+  // Combiner les blogs et les challenges
+  const allPosts = [...allBlogs, ...allChallenges];
+  const sortedPosts = sortPosts(allPosts);
   // Utiliser directement les posts sans allCoreContent pour conserver summary
   const posts = sortedPosts
     .filter((post) => !post.draft)

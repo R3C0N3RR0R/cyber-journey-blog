@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { formatDate } from "pliny/utils/formatDate";
 import { CoreContent } from "pliny/utils/contentlayer";
-import type { Blog } from "contentlayer/generated";
+import type { Blog, Challenge } from "contentlayer/generated";
 import Comments from "@/components/Comments";
 import Link from "@/components/Link";
 import PageTitle from "@/components/PageTitle";
@@ -12,7 +12,7 @@ import ScrollTopAndComment from "@/components/ScrollTopAndComment";
 import GlobalImageZoom from "@/components/GlobalImageZoom";
 
 interface LayoutProps {
-  content: CoreContent<Blog>;
+  content: CoreContent<Blog | Challenge>;
   children: ReactNode;
   next?: { path: string; title: string };
   prev?: { path: string; title: string };
@@ -49,7 +49,7 @@ export default function PostLayout({
           <div className="grid-rows-[auto_1fr] divide-y divide-gray-200 pb-8 xl:grid xl:grid-cols-4 xl:divide-y-0 dark:divide-gray-700">
             {/* Hero image harmonisée */}
             {(() => {
-              type ContentWithImages = CoreContent<Blog> & {
+              type ContentWithImages = CoreContent<Blog | Challenge> & {
                 images?: string | string[];
               };
               const contentWithImages = content as ContentWithImages;
@@ -71,7 +71,7 @@ export default function PostLayout({
                     alt={title}
                     width={250}
                     height={250}
-                    className="object-cover rounded-md"
+                    className="object-contain rounded-md"
                   />
                 </div>
               );

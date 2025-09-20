@@ -89,7 +89,8 @@ const Image = ({
       <button
         type="button"
         onClick={handleOpen}
-        className="p-0 m-0 bg-transparent border-0 leading-none"
+        className="p-0 m-0 bg-transparent border-0 leading-none overflow-hidden"
+        style={{ borderRadius: "inherit" }}
         aria-label={
           typeof alt === "string"
             ? `Agrandir l'image: ${alt}`

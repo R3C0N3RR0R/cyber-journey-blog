@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { slug } from "github-slugger";
 import { formatDate } from "pliny/utils/formatDate";
 import { CoreContent } from "pliny/utils/contentlayer";
-import type { Blog } from "contentlayer/generated";
+import type { Blog, Challenge } from "contentlayer/generated";
 import Link from "@/components/Link";
 import Tag from "@/components/Tag";
 import siteMetadata from "@/data/siteMetadata";
@@ -16,9 +16,9 @@ interface PaginationProps {
   currentPage: number;
 }
 interface ListLayoutProps {
-  posts: CoreContent<Blog>[];
+  posts: CoreContent<Blog | Challenge>[];
   title: string;
-  initialDisplayPosts?: CoreContent<Blog>[];
+  initialDisplayPosts?: CoreContent<Blog | Challenge>[];
   pagination?: PaginationProps;
 }
 
@@ -198,7 +198,7 @@ export default function ListLayoutWithTags({
                           alt={title}
                           width={80}
                           height={80}
-                          className="rounded-md object-cover hidden sm:block"
+                          className="object-cover rounded-md hidden sm:block"
                         />
                         <div className="flex-1">
                           <h2 className="text-2xl leading-8 font-bold tracking-tight">

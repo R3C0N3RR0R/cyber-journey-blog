@@ -21,11 +21,15 @@ import {
 
 // Plugin pour normaliser les fins de ligne
 const remarkNormalizeLineEndings = () => {
-  return (tree: any) => {
-    const visit = (node: any) => {
-      if (node.type === 'text' && node.value) {
+  return (tree: unknown) => {
+    const visit = (node: {
+      type?: string;
+      value?: string;
+      children?: unknown[];
+    }) => {
+      if (node.type === "text" && node.value) {
         // Remplacer tous les \r\n par \n
-        node.value = node.value.replace(/\r\n/g, '\n');
+        node.value = node.value.replace(/\r\n/g, "\n");
       }
       if (node.children) {
         node.children.forEach(visit);
@@ -80,13 +84,14 @@ const computedFields: ComputedFields = {
 };
 
 /**
- * Count the occurrences of all tags across blog posts and write to json file
+ * Count the occurrences of all tags across blog posts and challenges and write to json file
  */
-async function createTagCount(allBlogs: any[]) {
+async function createTagCount(allBlogs: unknown[], allChallenges: unknown[]) {
   const tagCount: Record<string, number> = {};
-  allBlogs.forEach((file) => {
+  const allPosts = [...allBlogs, ...allChallenges];
+  allPosts.forEach((file: { tags?: string[]; draft?: boolean }) => {
     if (file.tags && (!isProduction || file.draft !== true)) {
-      file.tags.forEach((tag: any) => {
+      file.tags.forEach((tag: string) => {
         const formattedTag = slug(tag);
         if (formattedTag in tagCount) {
           tagCount[formattedTag] += 1;
@@ -102,14 +107,15 @@ async function createTagCount(allBlogs: any[]) {
   writeFileSync("./app/tag-data.json", formatted);
 }
 
-function createSearchIndex(allBlogs: any[]) {
+function createSearchIndex(allBlogs: unknown[], allChallenges: unknown[]) {
   if (
     siteMetadata?.search?.provider === "kbar" &&
     siteMetadata.search.kbarConfig.searchDocumentsPath
   ) {
+    const allPosts = [...allBlogs, ...allChallenges];
     writeFileSync(
       `public/${path.basename(siteMetadata.search.kbarConfig.searchDocumentsPath)}`,
-      JSON.stringify(allCoreContent(sortPosts(allBlogs))),
+      JSON.stringify(allCoreContent(sortPosts(allPosts))),
     );
     console.log("Local search index generated...");
   }
@@ -118,6 +124,41 @@ function createSearchIndex(allBlogs: any[]) {
 export const Blog = defineDocumentType(() => ({
   name: "Blog",
   filePathPattern: "blog/**/*.mdx",
+  contentType: "mdx",
+  fields: {
+    title: { type: "string", required: true },
+    date: { type: "date", required: true },
+    tags: { type: "list", of: { type: "string" }, default: [] },
+    lastmod: { type: "date" },
+    draft: { type: "boolean" },
+    summary: { type: "string" },
+    images: { type: "json" },
+    authors: { type: "list", of: { type: "string" } },
+    layout: { type: "string" },
+    bibliography: { type: "string" },
+    canonicalUrl: { type: "string" },
+  },
+  computedFields: {
+    ...computedFields,
+    structuredData: {
+      type: "json",
+      resolve: (doc) => ({
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        headline: doc.title,
+        datePublished: doc.date,
+        dateModified: doc.lastmod || doc.date,
+        description: doc.summary,
+        image: doc.images ? doc.images[0] : siteMetadata.socialBanner,
+        url: `${siteMetadata.siteUrl}/${doc._raw.flattenedPath}`,
+      }),
+    },
+  },
+}));
+
+export const Challenge = defineDocumentType(() => ({
+  name: "Challenge",
+  filePathPattern: "challenges/**/*.mdx",
   contentType: "mdx",
   fields: {
     title: { type: "string", required: true },
@@ -183,7 +224,7 @@ export const Tags = defineDocumentType(() => ({
 
 export default makeSource({
   contentDirPath: "data",
-  documentTypes: [Blog, Authors, Tags],
+  documentTypes: [Blog, Challenge, Authors, Tags],
   mdx: {
     cwd: process.cwd(),
     remarkPlugins: [
@@ -215,8 +256,8 @@ export default makeSource({
     ],
   },
   onSuccess: async (importData) => {
-    const { allBlogs } = await importData();
-    createTagCount(allBlogs);
-    createSearchIndex(allBlogs);
+    const { allBlogs, allChallenges } = await importData();
+    createTagCount(allBlogs, allChallenges);
+    createSearchIndex(allBlogs, allChallenges);
   },
 });

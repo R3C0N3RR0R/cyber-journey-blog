@@ -1,0 +1,335 @@
+---
+title: Graverobber HTB Reverse Engineering
+date: 2025-09-18
+tags: [reverse-engineering, assembly, htb, binary-analysis, syscalls]
+draft: false
+summary: Complete reverse engineering writeup of HTB Graverobber challenge with detailed analysis
+images: ["/static/images/graverobber/graverobber-banner.png"]
+---
+
+# Writeup Reverse Engineering : Challenge "Graverobber" (HTB)
+
+## Introduction - Qu'est-ce que le Reverse Engineering ?
+
+Le **reverse engineering** consiste à analyser un programme compilé pour comprendre son fonctionnement sans avoir accès au code source. C'est comme faire de l'archéologie informatique : on démonte le programme couche par couche pour révéler ses secrets.
+
+Dans ce challenge, nous avons un binaire ELF Linux nommé `graverobber` qui semble chercher un "trésor". Notre mission : découvrir ce qu'il cache !
+
+## Vue d'ensemble du challenge
+
+![Vue d'ensemble du challenge Graverobber](/static/images/graverobber/challenge-overview.svg)
+
+Cette infographie résume le processus complet d'analyse du binaire `graverobber` :
+
+- **Analyse dynamique** avec `strace` pour identifier les appels système
+- **Analyse statique** avec `strings` et `objdump` pour examiner le code
+- **Extraction du flag** via l'analyse du tableau de données et de la logique du programme
+
+# Phase 1 : Reconnaissance initiale
+
+## Exécution basique
+
+```bash
+└─$ ./graverobber
+We took a wrong turning!
+```
+
+Le programme affiche un message d'erreur. C'est notre premier indice : il y a probablement une condition à remplir pour obtenir un autre message.
+
+## Analyse avec `file`
+
+```bash
+└─$ file graverobber
+graverobber: ELF 64-bit LSB executable, x86-64, dynamically linked
+```
+
+- **ELF** : Format exécutable Linux
+- **64-bit** : Architecture 64 bits
+- **LSB** : Little Endian (ordre des octets)
+- **dynamically linked** : Utilise des bibliothèques externes
+
+# Phase 2 : Analyse dynamique avec `strace`
+
+`strace` trace tous les **appels système** (syscalls) qu'un programme fait au kernel Linux.
+
+```bash
+└─$ strace ./graverobber
+execve("./graverobber", ["./graverobber"], [...]) = 0
+brk(NULL) = 0x560ef57bc000
+mmap(NULL, 8192, PROT_READ|PROT_WRITE, ...) = 0x7f691f4c7000
+...
+newfstatat(AT_FDCWD, "H/", 0x7ffeab422740, 0) = -1 ENOENT
+...
+write(1, "We took a wrong turning!\n", 25) = 25
+exit_group(1) = ?
+```
+
+**Points clés :**
+
+- `execve()` : Lance le programme
+- `newfstatat(AT_FDCWD, "H/", ...)` : **CRUCIAL !** Le programme cherche un fichier/dossier "H/"
+- `write(1, "We took...", 25)` : Écrit le message d'erreur
+- `exit_group(1)` : Se ferme avec code d'erreur 1
+
+**Déduction :** Le programme semble vérifier l'existence d'un élément nommé "H/".
+
+# Phase 3 : Analyse statique avec `strings`
+
+`strings` extrait toutes les chaînes de caractères lisibles du binaire.
+
+```bash
+└─$ strings ./graverobber
+We took a wrong turning!
+We found the treasure! (I hope it's not cursed)
+```
+
+**Découverte importante :** Il y a un message de succès caché ! Le programme peut afficher deux messages différents selon une condition.
+
+# Phase 4 : Analyse des sections avec `objdump`
+
+## Section `.rodata` (Read-Only Data)
+
+```bash
+└─$ objdump -s -j .rodata ./graverobber
+ 2000 01000200 00000000 57652074 6f6f6b20  ........We took
+ 2010 61207772 6f6e6720 7475726e 696e6721  a wrong turning!
+ 2020 00000000 00000000 57652066 6f756e64  ........We found
+ 2030 20746865 20747265 61737572 65212028   the treasure! (
+```
+
+Les deux messages sont stockés en mémoire. Le programme choisit lequel afficher selon une condition logique.
+
+# Phase 5 : Désassemblage du code avec `objdump -d`
+
+C'est ici que ça devient technique ! Analysons le code assembleur x86-64.
+
+## Structure de la fonction `main`
+
+```assembly
+0000000000001159 <main>:
+    1159:	push   %rbp              ; Sauvegarder le pointeur de base
+    115a:	mov    %rsp,%rbp         ; Établir le nouveau frame de pile
+    115d:	sub    $0xf0,%rsp        ; Allouer 240 octets sur la pile
+```
+
+**Explications des mnémoniques :**
+
+- `push` : Empile une valeur sur la pile
+- `mov` : Copie une valeur d'un endroit à un autre
+- `sub` : Soustraction (ici pour allouer de l'espace sur la pile)
+
+**Registres x86-64 :**
+
+- `%rbp` : **Base Pointer** - Pointeur vers la base du frame de pile actuel
+- `%rsp` : **Stack Pointer** - Pointeur vers le sommet de la pile
+- `$0xf0` : Valeur immédiate 240 en décimal (allocation de 240 octets)
+
+## Initialisation des variables locales
+
+```assembly
+    1173:	movq   $0x0,-0x50(%rbp)  ; buffer[0] = 0
+    117b:	movq   $0x0,-0x48(%rbp)  ; buffer[8] = 0
+    1183:	movq   $0x0,-0x40(%rbp)  ; buffer[16] = 0
+    ...
+    11ba:	movl   $0x0,-0xe4(%rbp)  ; i = 0 (compteur de boucle)
+```
+
+## La boucle principale
+
+```assembly
+    11c4:	jmp    1237 <main+0xde>     ; Aller à la condition de boucle
+    11c6:	mov    -0xe4(%rbp),%eax     ; Charger i dans eax
+    11cc:	cltq                        ; Étendre eax vers rax (32→64 bits)
+    11ce:	lea    0x0(,%rax,4),%rdx    ; rdx = rax * 4 (i * 4)
+    11d6:	lea    0x2e63(%rip),%rax    ; rax = adresse de 'parts'
+    11dd:	mov    (%rdx,%rax,1),%edx   ; edx = parts[i]
+```
+
+**Analyse logique :** Le programme lit des valeurs depuis un tableau appelé `parts`.
+
+## Construction du chemin
+
+```assembly
+    11e6:	add    %eax,%eax            ; eax = i * 2
+    11ea:	mov    %dl,-0x50(%rbp,%rax,1) ; buffer[i*2] = parts[i]
+    11f6:	add    $0x1,%eax            ; eax = i * 2 + 1
+    11fb:	movb   $0x2f,-0x50(%rbp,%rax,1) ; buffer[i*2+1] = '/'
+```
+
+**Points clés :**
+
+- `%dl` : Octet de poids faible de rdx (8 bits les plus bas)
+- `0x2f` : Code ASCII de '/' (47 en décimal)
+- Le programme construit : `char(parts[i]) + "/"`
+
+## Appel système `stat`
+
+```assembly
+    1200:	lea    -0xe0(%rbp),%rdx     ; rdx = adresse du buffer stat
+    1207:	lea    -0x50(%rbp),%rax     ; rax = adresse du buffer chemin
+    120e:	mov    %rax,%rdi            ; 1er argument : chemin
+    1211:	call   1050 <stat@plt>      ; stat(chemin, &statbuf)
+    1216:	test   %eax,%eax            ; Tester le code de retour
+    1218:	je     1230 <main+0xd7>     ; Si succès (0), continuer
+```
+
+**Fonctionnement de `stat` :**
+
+- Vérifie si un fichier/dossier existe
+- Retourne 0 si succès, -1 si échec
+
+## Condition de boucle
+
+```assembly
+    1237:	mov    -0xe4(%rbp),%eax     ; Charger i
+    123d:	cmp    $0x1f,%eax           ; Comparer i avec 31
+    1240:	jbe    11c6 <main+0x6d>     ; Si i <= 31, continuer la boucle
+```
+
+**Déduction :** La boucle itère 32 fois (0 à 31).
+
+# Phase 6 : Analyse du tableau `parts`
+
+Le programme lit des données depuis l'adresse `0x4040`. Examinons cette zone :
+
+```bash
+└─$ objdump -s -j .data ./graverobber
+ 4040 48000000 54000000 42000000 7b000000  H...T...B...{...
+ 4050 62000000 72000000 33000000 34000000  b...r...3...4...
+ 4060 6b000000 31000000 6e000000 39000000  k...1...n...9...
+ 4070 5f000000 64000000 30000000 77000000  _...d...0...w...
+ 4080 6e000000 5f000000 74000000 68000000  n..._...t...h...
+ 4090 33000000 5f000000 73000000 79000000  3..._...s...y...
+ 40a0 73000000 63000000 34000000 6c000000  s...c...4...l...
+ 40b0 6c000000 35000000 7d000000 00000000  l...5...}.......
+```
+
+## Conversion hexadécimal → ASCII
+
+Les données sont stockées en format **little-endian** sur 4 octets par entrée :
+
+- `48000000` → `0x48` → 'H'
+- `54000000` → `0x54` → 'T'
+- `42000000` → `0x42` → 'B'
+- etc.
+
+# Algorithme complet du programme
+
+```python
+def graverobber_algorithm():
+    parts = [0x48, 0x54, 0x42, 0x7b, 0x62, 0x72, 0x33, 0x34,
+             0x6b, 0x31, 0x6e, 0x39, 0x5f, 0x64, 0x30, 0x77,
+             0x6e, 0x5f, 0x74, 0x68, 0x33, 0x5f, 0x73, 0x79,
+             0x73, 0x63, 0x34, 0x6c, 0x6c, 0x35, 0x7d]
+
+    for i in range(32):
+        path = chr(parts[i]) + "/"
+        if not file_exists(path):
+            print("We took a wrong turning!")
+            return 1
+
+    print("We found the treasure! (I hope it's not cursed)")
+    return 0
+```
+
+# Concepts de sécurité et reverse engineering
+
+## 1. **Obfuscation par dissimulation**
+
+Le flag n'est pas affiché directement mais caché dans un tableau de données.
+
+## 2. **Analyse multi-couches**
+
+- **Statique** : `strings`, `objdump`, analyse des sections
+- **Dynamique** : `strace`, `ltrace`, débogage
+
+## 3. **Compréhension de l'assembleur**
+
+- Registres x86-64 (`%rax`, `%rbp`, `%rdi`, etc.)
+- Modes d'adressage (`-0x50(%rbp)`, `(%rdx,%rax,1)`)
+- Conventions d'appel (arguments dans `%rdi`, `%rsi`, etc.)
+
+## 4. **Formats de données**
+
+- Little-endian vs Big-endian
+- Tailles des types (`movb`, `movl`, `movq`)
+- Alignement mémoire
+
+# Annexe : Guide des registres x86-64
+
+## Registres généraux 64 bits
+
+| Registre | Nom complet       | Usage principal           |
+| -------- | ----------------- | ------------------------- |
+| `%rax`   | Accumulator       | Valeur de retour, calculs |
+| `%rbx`   | Base              | Registre général          |
+| `%rcx`   | Counter           | Compteur de boucles       |
+| `%rdx`   | Data              | Données, 2ème opérande    |
+| `%rsi`   | Source Index      | 2ème argument de fonction |
+| `%rdi`   | Destination Index | 1er argument de fonction  |
+| `%rbp`   | Base Pointer      | Pointeur de base du frame |
+| `%rsp`   | Stack Pointer     | Pointeur sommet de pile   |
+
+## Variantes des registres
+
+| 64-bit | 32-bit | 16-bit | 8-bit |
+| ------ | ------ | ------ | ----- |
+| %rax   | %eax   | %ax    | %al   |
+| %rbx   | %ebx   | %bx    | %bl   |
+| %rcx   | %ecx   | %cx    | %cl   |
+| %rdx   | %edx   | %dx    | %dl   |
+
+## Modes d'adressage
+
+| Syntaxe         | Signification           | Exemple                  |
+| --------------- | ----------------------- | ------------------------ |
+| `$123`          | Valeur immédiate        | `mov $42,%eax`           |
+| `%rax`          | Contenu du registre     | `mov %rax,%rbx`          |
+| `(%rax)`        | Mémoire à l'adresse rax | `mov (%rax),%ebx`        |
+| `8(%rax)`       | Mémoire à rax+8         | `mov 8(%rax),%ebx`       |
+| `(%rax,%rbx,4)` | Mémoire à rax+rbx\*4    | `mov (%rax,%rbx,4),%ecx` |
+
+## Outils de reverse engineering
+
+| Outil         | Usage                | Exemple             |
+| ------------- | -------------------- | ------------------- |
+| `file`        | Type de fichier      | `file binary`       |
+| `strings`     | Chaînes lisibles     | `strings binary`    |
+| `strace`      | Appels système       | `strace ./binary`   |
+| `ltrace`      | Appels bibliothèques | `ltrace ./binary`   |
+| `objdump`     | Désassembleur        | `objdump -d binary` |
+| `hexdump/xxd` | Données brutes       | `xxd binary`        |
+| `gdb`         | Débogueur            | `gdb binary`        |
+| `radare2`     | Suite complète       | `r2 binary`         |
+
+# Méthodologie générale
+
+1. **Reconnaissance** : Type de fichier, protections, architecture
+2. **Exécution** : Comportement normal et cas d'erreur
+3. **Analyse dynamique** : Appels système et bibliothèques
+4. **Analyse statique** : Code assembleur et données
+5. **Hypothèses** : Formuler des théories sur le fonctionnement
+6. **Validation** : Tester les hypothèses avec des outils
+7. **Exploitation** : Extraire l'information recherchée
+
+# Conclusion
+
+Ce challenge illustre parfaitement les techniques de base du reverse engineering :
+
+- **Observation** du comportement
+- **Analyse** des appels système
+- **Désassemblage** du code
+- **Compréhension** de la logique
+- **Extraction** des données cachées
+
+Le flag `HTB{****}`fait référence à l'analyse des appels système (syscalls) qui nous a menés à la solution !
+
+# Exercices pour approfondir
+
+1. **Reproduisez l'analyse** : Refaites le processus étape par étape
+2. **Créez les répertoires** : Que se passe-t-il si vous créez tous les dossiers H/, T/, B/, etc. ?
+3. **Modifiez le binaire** : Utilisez un éditeur hex pour changer les messages
+4. **Analysez avec GDB** : Placez des breakpoints et observez l'exécution
+5. **Écrivez un script** : Automatisez l'extraction du flag depuis le binaire
+
+Le reverse engineering est un art qui se maîtrise avec la pratique. Chaque binaire a ses propres secrets à révéler !

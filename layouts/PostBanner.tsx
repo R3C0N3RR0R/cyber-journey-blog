@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import Image from "@/components/Image";
 import { CoreContent } from "pliny/utils/contentlayer";
-import type { Blog } from "contentlayer/generated";
+import type { Blog, Challenge } from "contentlayer/generated";
 import Comments from "@/components/Comments";
 import Link from "@/components/Link";
 import PageTitle from "@/components/PageTitle";
@@ -10,7 +10,7 @@ import siteMetadata from "@/data/siteMetadata";
 import ScrollTopAndComment from "@/components/ScrollTopAndComment";
 
 interface LayoutProps {
-  content: CoreContent<Blog>;
+  content: CoreContent<Blog | Challenge>;
   children: ReactNode;
   next?: { path: string; title: string };
   prev?: { path: string; title: string };
@@ -40,7 +40,7 @@ export default function PostBanner({
                 alt={title}
                 width={250}
                 height={250}
-                className="object-cover rounded-md"
+                className="object-contain rounded-md"
               />
             </div>
             <div className="relative pt-10">
