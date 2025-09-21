@@ -1,0 +1,399 @@
+﻿---
+title: CryptOfTheUndead - Reverse Engineering Challenge
+date: 2025-09-21
+tags:
+  - reverse-engineering
+  - cryptography
+  - chacha20
+  - gdb
+  - objdump
+  - binary-analysis
+draft: false
+summary: Guide complet de reverse engineering du challenge CryptOfTheUndead analyse statique et dynamique d'un ransomware utilisant ChaCha20 extraction des paramètres cryptographiques et développement d'un déchiffreur
+images:
+  - /static/images/cryptoftheundead/cryptoftheundead-banner.svg
+---
+
+<TOCInline toc={props.toc} exclude="Overview" toHeading={3} />
+
+## Vue d'ensemble
+
+**CryptOfTheUndead** est un challenge de reverse engineering qui simule un ransomware basique utilisant l'algorithme de chiffrement **ChaCha20**. L'objectif est d'analyser le binaire pour extraire les paramètres cryptographiques et développer un déchiffreur.
+
+![Vue d'ensemble du challenge CryptOfTheUndead](/static/images/cryptoftheundead/challenge-overview.svg)
+
+### Compétences développées
+
+- **Analyse statique** : `objdump`, `strings`, examination des sections ELF
+- **Analyse dynamique** : Débogage avec GDB, inspection mémoire
+- **Cryptographie** : Compréhension de ChaCha20, vulnérabilités d'implémentation
+- **Développement** : Création d'un déchiffreur Python
+
+---
+
+## Phase 1 : Reconnaissance initiale
+
+### 1.1 Identification du type de fichier
+
+```bash
+file crypt
+```
+
+**Résultat :**
+
+```
+ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked,
+interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=5ac213d86cdb95af5f911c357cdc45c66b6bffc1,
+for GNU/Linux 4.4.0, not stripped
+```
+
+**Analyse des éléments clés :**
+
+- **ELF 64-bit** : Format exécutable Linux 64 bits
+- **Dynamically linked** : Utilise des bibliothèques partagées (libc)
+- **NOT STRIPPED** : Les symboles de debug sont présents (facilite l'analyse)
+- **PIE executable** : Position Independent Executable (ASLR activé)
+
+> **💡 Info :** PIE (Position Independent Executable) signifie que l'exécutable peut être chargé à n'importe quelle adresse en mémoire pour des raisons de sécurité, rendant les adresses absolues imprévisibles.
+
+### 1.2 Extraction des chaînes de caractères
+
+```bash
+strings crypt
+```
+
+**Éléments clés identifiés :**
+
+```
+Usage: %s file_to_encrypt
+.undead
+BRAAAAAAAAAAAAAAAAAAAAAAAAAINS!!
+expand 32-byte k
+error: that which is undead may not be encrypted
+```
+
+**Déductions logiques :**
+
+- Le programme attend un fichier en argument
+- Extension `.undead` ajoutée aux fichiers chiffrés
+- `BRAAAAAAAAAAAAAAAAAAAAAAAAAINS!!` : Chaîne suspecte (potentielle clé)
+- `expand 32-byte k` : Constante caractéristique de l'algorithme **ChaCha20**
+- Protection contre le re-chiffrement
+
+### 1.3 Test de comportement basique
+
+```bash
+./crypt
+ltrace ./crypt
+```
+
+**Observation :** Le programme affiche l'usage et se termine, confirmant qu'il attend un argument.
+
+---
+
+## Phase 2 : Analyse statique approfondie
+
+### 2.1 Examen de la section .rodata
+
+```bash
+objdump -s -j .rodata crypt
+```
+
+**Données importantes trouvées :**
+
+| Adresse | Contenu                            | Signification                   |
+| ------- | ---------------------------------- | ------------------------------- |
+| `2130`  | `expand 32-byte k`                 | Constante ChaCha20              |
+| `20c0`  | `BRAAAAAAAAAAAAAAAAAAAAAAAAAINS!!` | Clé de chiffrement              |
+| `2025`  | `.undead`                          | Extension des fichiers chiffrés |
+
+> **💡 Note :** La section **`.rodata`** contient les données en lecture seule (chaînes constantes, tables de lookup). C'est un excellent point de départ pour identifier les algorithmes cryptographiques par leurs constantes caractéristiques.
+
+### 2.2 Désassemblage du code
+
+```bash
+objdump -d crypt > desassemblage.txt
+```
+
+#### Analyse de la fonction `main` (0x1190)
+
+**Vérification des arguments :**
+
+```assembly
+11aa: 83 ff 01          cmp    $0x1,%edi        ; Compare argc avec 1
+11ad: 0f 8e f7 00 00 00 jle    12aa <main+0x11a> ; Saut si argc <= 1
+```
+
+**Vérification de l'extension :**
+
+```assembly
+11b7: 48 8d 35 67 0e 00 00  lea    0xe67(%rip),%rsi    ; Charge ".undead"
+11be: 48 89 ef             mov    %rbp,%rdi           ; Nom du fichier
+11c1: e8 2a 02 00 00       call   13f0 <ends_with>    ; Appel ends_with()
+```
+
+L'instruction `lea 0xe67(%rip),%rsi` calcule l'adresse :
+
+```
+0x1190 + 0x6 + 0xe67 = 0x2025
+```
+
+qui correspond à la chaîne `.undead` dans la section `.rodata`.
+
+#### Fonction `ends_with` (0x13f0)
+
+```assembly
+13fa: e8 81 fc ff ff       call   1080 <strlen@plt>   ; strlen(filename)
+13ff: 4c 89 e7             mov    %r12,%rdi           ; ".undead"
+1402: 48 89 c5             mov    %rax,%rbp           ; Sauvegarde longueur
+1405: e8 76 fc ff ff       call   1080 <strlen@plt>   ; strlen(".undead")
+```
+
+**Algorithme de protection :**
+
+1. Calcule la longueur du nom de fichier
+2. Calcule la longueur de `.undead`
+3. Compare les derniers caractères du fichier avec `.undead`
+4. Empêche le re-chiffrement des fichiers déjà chiffrés
+
+#### Fonction `read_file` (0x1430)
+
+```assembly
+1456: bf 00 04 00 00       mov    $0x400,%edi         ; Taille buffer initial (1024 bytes)
+1461: 31 ed                xor    %ebp,%ebp           ; Compteur = 0
+1463: e8 78 fc ff ff       call   10e0 <malloc@plt>   ; Allocation mémoire
+```
+
+**Algorithme de lecture :**
+
+1. Allocation d'un buffer de 1024 octets initial
+2. Lecture du fichier par blocs de 1024 octets
+3. Réallocation dynamique avec `realloc()` si nécessaire
+4. Retour du contenu et de la taille
+
+### 2.3 Identification de l'algorithme cryptographique
+
+**Indices convergents :**
+
+- Constante `expand 32-byte k` (signature unique de ChaCha20)
+- Fonctions `chacha20_init_context` et `chacha20_xor`
+- Contexte de 0xe0 octets (224 octets, taille typique ChaCha20)
+
+> **✅ ChaCha20** est un algorithme de chiffrement par flux qui utilise :
+>
+> - **Clé de 32 octets**
+> - **Nonce de 12 octets**
+> - **Counter de 4 octets**
+> - Génère un flux pseudo-aléatoire XORé avec les données
+
+---
+
+## Phase 3 : Analyse dynamique avec GDB
+
+### 3.1 Stratégie de débogage
+
+**Objectif :** Intercepter les paramètres de chiffrement au moment de leur utilisation.
+
+**Points d'arrêt stratégiques :**
+
+- `main` : Comprendre le flux général
+- `chacha20_init_context` : Capturer clé et nonce
+- `encrypt_buf` : Voir les paramètres passés
+
+### 3.2 Configuration et capture
+
+```bash
+gdb ./crypt
+(gdb) break chacha20_init_context
+(gdb) run test.txt
+```
+
+#### Extraction de la clé
+
+```bash
+(gdb) x/32c $rsi
+```
+
+> **💡 Justification :** Dans la signature de `chacha20_init_context`, le registre `$rsi` contient le deuxième paramètre (la clé). ChaCha20 utilise une clé de 32 octets, d'où `x/32c`.
+
+**Résultat :**
+
+```
+0x5555555560c0: 66 'B'  82 'R'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'
+0x5555555560c8: 65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'
+0x5555555560d0: 65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'  65 'A'
+0x5555555560d8: 65 'A'  65 'A'  65 'A'  73 'I'  78 'N'  83 'S'  33 '!'  33 '!'
+```
+
+**Clé extraite :** `BRAAAAAAAAAAAAAAAAAAAAAAAAAINS!!` (32 octets)
+
+#### Extraction du nonce
+
+```bash
+(gdb) x/12bx $rdx
+```
+
+**Résultat :**
+
+```
+0x7fffffffdbec: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+```
+
+**Nonce extrait :** 12 octets de zéros
+
+### 3.3 Analyse de l'appel cryptographique
+
+Dans `encrypt_buf` :
+
+```assembly
+122d: 48 8d 15 8c 0e 00 00    lea 0xe8c(%rip),%rdx  # Charge adresse de la clé
+1234: 4c 89 ee                mov %r13,%rsi         # Taille du fichier
+1237: 4c 89 e7                mov %r12,%rdi         # Contenu du fichier
+123a: e8 c1 02 00 00          call 1500 <encrypt_buf>
+```
+
+**Déduction des paramètres :**
+
+- `%rdi` : Pointeur vers les données à chiffrer
+- `%rsi` : Taille des données
+- `%rdx` : Pointeur vers la clé
+
+---
+
+## Phase 4 : Développement du déchiffreur
+
+### 4.1 Principe cryptographique
+
+**ChaCha20 est un chiffrement symétrique :**
+
+- **Chiffrement :** `ciphertext = plaintext XOR keystream`
+- **Déchiffrement :** `plaintext = ciphertext XOR keystream`
+- Le même algorithme avec la même clé et le même nonce génère le même keystream
+
+### 4.2 Implémentation Python
+
+```python
+from Crypto.Cipher import ChaCha20
+
+def decrypt_undead_file(filename):
+    # Paramètres extraits via reverse engineering
+    key = b"BRAAAAAAAAAAAAAAAAAAAAAAAAAINS!!"  # 32 octets
+    nonce = b"\x00" * 12                        # 12 octets de zéros
+
+    # Lecture du fichier chiffré
+    with open(filename, 'rb') as f:
+        ciphertext = f.read()
+
+    # Initialisation du déchiffreur ChaCha20
+    cipher = ChaCha20.new(key=key, nonce=nonce)
+
+    # Déchiffrement (identique au chiffrement pour ChaCha20)
+    plaintext = cipher.decrypt(ciphertext)
+
+    return plaintext
+
+# Utilisation
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 2:
+        print("Usage: python3 decrypt.py <file.undead>")
+        sys.exit(1)
+
+    try:
+        decrypted_data = decrypt_undead_file(sys.argv[1])
+        print("Contenu déchiffré:")
+        print(decrypted_data.decode('utf-8', errors='ignore'))
+    except Exception as e:
+        print(f"Erreur lors du déchiffrement: {e}")
+```
+
+### 4.3 Validation
+
+```bash
+python3 decrypt.py flag.txt.undead
+```
+
+**Résultat :** `HTB{und01ng_***_*****_**_und34th}`
+
+---
+
+## Phase 5 : Analyse des vulnérabilités
+
+### 5.1 Faiblesses cryptographiques identifiées
+
+#### 1. Clé statique hardcodée
+
+- ❌ La clé est stockée en plain text dans la section `.rodata`
+- ❌ Facilement extractible par analyse statique ou dynamique
+- ❌ Aucune dérivation de clé basée sur un mot de passe
+
+#### 2. Nonce constant
+
+- ❌ Utilisation d'un nonce de zéros pour tous les fichiers
+- ❌ Violation du principe de sécurité ChaCha20 (nonce unique)
+- ❌ Permet des attaques par réutilisation de keystream
+
+#### 3. Absence de vérification d'intégrité
+
+- ❌ Aucun MAC (Message Authentication Code)
+- ❌ Possibilité de modification des données chiffrées
+- ❌ Pas de détection de corruption
+
+### 5.2 Techniques de protection contournées
+
+**Protection contre le re-chiffrement :**
+
+- Vérification de l'extension `.undead`
+- Facilement contournable en renommant le fichier
+
+**Obscurité du code :**
+
+- Symboles de debug présents (`not stripped`)
+- Noms de fonctions explicites (`chacha20_*`)
+
+---
+
+## Concepts clés assimilés
+
+### Analyse statique
+
+- **Extraction d'informations** : `file`, `strings`, `objdump`
+- **Reconnaissance d'algorithmes** : Identification par constantes caractéristiques
+- **Analyse de flux** : Compréhension de la logique par le désassemblage
+
+### Analyse dynamique
+
+- **Débogage ciblé** : Placement stratégique de breakpoints
+- **Inspection mémoire** : Extraction de données sensibles en runtime
+- **Corrélation** : Lien entre analyse statique et comportement dynamique
+
+### Cryptographie appliquée
+
+- **Algorithmes symétriques** : Principe du chiffrement par flux
+- **Paramètres critiques** : Importance de la clé et du nonce
+- **Implémentation sécurisée** : Identification des mauvaises pratiques
+
+### Méthodologie complète
+
+1. **Reconnaissance** →’ Identification du type et de la complexité
+2. **Analyse statique** →’ Compréhension de la structure et des algorithmes
+3. **Analyse dynamique** →’ Extraction des secrets en runtime
+4. **Reconstruction** →’ Développement de l'exploit/déchiffreur
+5. **Validation** →’ Test et vérification du résultat
+
+> **✅ Succès :** Cette approche méthodique permet de résoudre efficacement des challenges de reverse engineering en combinant outils d'analyse, compréhension cryptographique et développement pratique.
+
+---
+
+## Conclusion
+
+Le challenge **CryptOfTheUndead** illustre parfaitement les vulnérabilités typiques d'un ransomware mal implémenté. L'analyse combinée statique/dynamique a permis d'extraire tous les paramètres cryptographiques nécessaires au déchiffrement.
+
+**Points clés retenus :**
+
+- L'importance des constantes cryptographiques pour l'identification d'algorithmes
+- La puissance de GDB pour l'extraction de secrets en runtime
+- Les dangers des clés hardcodées et des nonces réutilisés
+- La méthodologie systématique du reverse engineering
+
+Cette expérience renforce l'importance des bonnes pratiques cryptographiques et démontre comment l'analyse de malware peut révéler des faiblesses exploitables.
