@@ -1,0 +1,140 @@
+﻿---
+title: Debugging Interface - Hardware Challenge
+date: 2025-09-28
+tags:
+  - hardware
+  - signal-analysis
+  - serial-communication
+  - logic-analyzer
+  - reverse-engineering
+draft: false
+summary: Analyse d'un signal numérique capturé avec Logic 2 pour extraire un flag caché dans une communication série d'un système embarqué
+images:
+  - /static/images/debugging_interface/debugging-interface-banner.svg
+---
+
+<TOCInline toc={props.toc} exclude="Overview" toHeading={3} />
+
+# 🛠️ Hack The Box – _Debugging Interface_
+
+## 🎯 Objectif du challenge
+
+Le challenge **Debugging Interface** de Hack The Box (catégorie _Hardware_) propose un fichier `.sal` nommé `debugging_interface_signal.sal`. Ce fichier contient :
+
+- `meta.json` : les métadonnées de la capture
+- `digital-0.bin` : les données brutes du signal numérique
+
+L'objectif est d'analyser cette capture pour **extraire un flag caché dans une communication série**, typiquement issue d'un microcontrôleur ou d'un système embarqué.
+
+## 🧰 Outils utilisés
+
+| Outil                                                | Usage                                      |
+| ---------------------------------------------------- | ------------------------------------------ |
+| [Logic 2](https://www.saleae.com/fr/pages/downloads) | Visualisation et décodage du signal `.sal` |
+| `unzip`, `strings`, `hexdump`                        | Inspection brute du contenu                |
+| Terminal Linux                                       | Environnement d'analyse                    |
+| Async Serial Analyzer                                | Décodage de la communication série         |
+
+## 📦 Étape 1 : Extraction du fichier `.sal`
+
+Un fichier `.sal` est en réalité une **archive ZIP**. On l'extrait avec :
+
+```bash
+unzip debugging_interface_signal.sal -d extracted_sal
+```
+
+On obtient :
+
+- `meta.json` : paramètres de capture (canaux, échantillonnage, etc.)
+- `digital-0.bin` : transitions numériques brutes
+
+## 🔍 Étape 2 : Inspection brute avec `strings`
+
+Avant d'utiliser Logic 2, on peut inspecter le fichier binaire :
+
+```bash
+strings digital-0.bin
+```
+
+Parmi les premières lignes, on trouve :
+
+<Image
+  alt="Sortie de la commande strings montrant l'en-tête SALEAE"
+  src="/static/images/debugging_interface/strings-entete.png"
+  width={400}
+  height={200}
+/>
+
+La présence de l'en-tête `"<SALEAE>"` est révélatrice : elle indique que le fichier est issu d'un export du logiciel **Logic 2** de Saleae. Cette découverte nous oriente immédiatement vers l'utilisation de Logic 2 pour visualiser et décoder le signal.
+
+## 🧪 Étape 3 : Ouverture dans Logic 2
+
+### 🔹 Installation
+
+Sur Linux :
+
+```bash
+chmod +x Logic-2.4.36-linux-x64.AppImage
+./Logic-2.4.36-linux-x64.AppImage
+```
+
+## 🧵 Étape 4 : Analyse avec Async Serial
+
+Dans Logic 2 :
+
+1. Ouvre le fichier `.sal`
+2. Ajoute un **analyzer Async Serial**
+
+<Image
+  alt="Configuration de l'analyseur Async Serial dans Logic 2"
+  src="/static/images/debugging_interface/flag-2.png"
+  width={600}
+  height={300}
+/>
+
+3. Configure :
+   - **Bit rate** : commence à 9600, puis ajuste
+   - **Signal polarity** : selon le signal
+   - **Use terminal view** : activé
+
+### 🔧 Baud rate optimal
+
+Le bon baud rate est **31250**. Une fois ajusté, le texte devient lisible dans la vue terminale.
+
+<Image
+  alt="Vue terminale avec le baud rate correct"
+  src="/static/images/debugging_interface/flag-3.png"
+  width={600}
+  height={300}
+/>
+
+## 🧠 Étape 5 : Extraction du flag
+
+Rechercher le H du début du flag `HTB{...........}`
+
+<Image
+  alt="Recherche du début du flag HTB"
+  src="/static/images/debugging_interface/flag-1.png"
+  width={600}
+  height={300}
+/>
+
+Dès le premier décodage correct, le flag apparaît clairement :
+
+<Image
+  alt="Flag final extrait de la communication série"
+  src="/static/images/debugging_interface/flag.png"
+  width={600}
+  height={300}
+/>
+
+## 🎯 Conclusion
+
+Ce challenge illustre parfaitement l'analyse de signaux numériques dans le domaine de la sécurité hardware. Les points clés à retenir :
+
+- **Reconnaissance du format** : Un fichier `.sal` est une archive contenant des métadonnées et des données binaires
+- **Inspection préliminaire** : L'utilisation de `strings` peut révéler des indices sur l'origine du fichier
+- **Configuration précise** : Le baud rate correct (31250) est crucial pour décoder la communication
+- **Analyse méthodique** : Logic 2 offre des outils puissants pour l'analyse de protocoles série
+
+Cette approche est applicable à de nombreux scénarios réels d'analyse de firmware et de reverse engineering de systèmes embarqués.
