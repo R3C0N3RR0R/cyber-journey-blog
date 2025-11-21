@@ -11,7 +11,8 @@ import path from "path";
 import matter from "gray-matter";
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
-import remarkHtml from "remark-html";
+import remarkRehype from "remark-rehype";
+import rehypeStringify from "rehype-stringify";
 
 const POSTS_PER_PAGE = 5;
 
@@ -67,10 +68,11 @@ export default async function TagPage(props: {
     const fileContent = fs.readFileSync(tagFilePath, "utf8");
     const { content } = matter(fileContent);
 
-    // Traitement du markdown en HTML
+    // Traitement du markdown en HTML (remark-rehype préserve mieux les attributs HTML)
     const processedContent = await remark()
       .use(remarkGfm)
-      .use(remarkHtml)
+      .use(remarkRehype, { allowDangerousHtml: true })
+      .use(rehypeStringify, { allowDangerousHtml: true })
       .process(content);
 
     tagDescriptionHtml = processedContent.toString();

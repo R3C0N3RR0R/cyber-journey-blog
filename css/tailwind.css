@@ -116,6 +116,13 @@
       color: var(--color-gray-100);
     }
   }
+
+  /* Nmap option styling - must be in utilities layer to override prose */
+  .prose .nmap-option,
+  .prose-invert .nmap-option {
+    color: #8ac13c !important;
+    font-weight: bold !important;
+  }
 }
 
 .task-list-item::before {
@@ -173,4 +180,23 @@ input:-webkit-autofill:focus {
 .linkicon {
   display: inline-block;
   vertical-align: middle;
+}
+
+/* Nmap option styling for command options - must override prose styles */
+/* Using very specific selectors to override Tailwind prose utilities */
+.prose .nmap-option,
+.prose-invert .nmap-option,
+.prose p .nmap-option,
+.prose-invert p .nmap-option,
+.prose li .nmap-option,
+.prose-invert li .nmap-option,
+.prose ul .nmap-option,
+.prose-invert ul .nmap-option,
+.prose ol .nmap-option,
+.prose-invert ol .nmap-option,
+.prose-lg .nmap-option,
+.prose-lg p .nmap-option,
+.prose-lg li .nmap-option {
+  color: #8ac13c !important;
+  font-weight: bold !important;
 }

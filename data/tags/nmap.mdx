@@ -1,0 +1,255 @@
+---
+title: Nmap
+date: "2025-01-27"
+draft: false
+---
+
+# 🔍 Liste des commandes principales - Nmap
+
+## 1. 🎯 Options de base et découverte d'hôtes
+
+### 📡 Scans de base
+
+- <span class="nmap-option">-sL</span> : List scan - liste les cibles sans les
+  scanner
+
+- <span class="nmap-option">-sn</span> : Ping scan - découverte d'hôtes
+  uniquement (pas de scan de ports)
+
+- <span class="nmap-option">-sT</span> : TCP connect scan - complète le
+  three-way handshake
+
+- <span class="nmap-option">-sS</span> : TCP SYN scan - seulement la première
+  étape du three-way handshake
+
+- <span class="nmap-option">-sU</span> : UDP Scan
+
+- <span class="nmap-option">-Pn</span> : Traite tous les hôtes comme étant en
+  ligne - scanne les hôtes qui semblent être hors ligne
+
+### 🌐 Découverte d'hôtes (Host Discovery)
+
+- <span class="nmap-option">-PR</span> : ARP Scan
+  - `sudo nmap -PR -sn TARGET`
+
+- <span class="nmap-option">-PE</span> : ICMP Echo Scan
+  - `sudo nmap -PE -sn TARGET`
+
+- <span class="nmap-option">-PP</span> : ICMP Timestamp Scan
+  - `sudo nmap -PP -sn TARGET`
+
+- <span class="nmap-option">-PM</span> : ICMP Address Mask Scan
+  - `sudo nmap -PM -sn TARGET`
+
+- <span class="nmap-option">-PS[ports]</span> : TCP SYN Ping Scan
+  - `sudo nmap -PS22,80,443 -sn TARGET`
+
+- <span class="nmap-option">-PA[ports]</span> : TCP ACK Ping Scan
+  - `sudo nmap -PA22,80,443 -sn TARGET`
+
+- <span class="nmap-option">-PU[ports]</span> : UDP Ping Scan
+  - `sudo nmap -PU53,161,162 -sn TARGET`
+
+### 🔗 Options DNS
+
+- <span class="nmap-option">-n</span> : Pas de résolution DNS
+
+- <span class="nmap-option">-R</span> : Reverse-DNS lookup pour tous les hôtes
+
+## 2. 🔌 Spécification des ports
+
+- <span class="nmap-option">-p[ports]</span> : Spécifie une liste ou une plage
+  de ports
+  - `-p22,80,443` : Liste précise de ports
+
+  - `-p5000-5500` : Plage de ports
+
+  - `-p-` : Tous les 65 535 ports
+
+- <span class="nmap-option">-F</span> : Mode rapide - scanne les 100 ports les
+  plus communs
+
+- <span class="nmap-option">--top-ports &lt;num&gt;</span> : Scan les N ports
+  les plus utilisés
+  - `--top-ports 10` : Les 10 ports les plus utilisés
+
+## 3. 🚀 Types de scan de ports
+
+### 🚩 Scans TCP basés sur les flags
+
+- <span class="nmap-option">-sN</span> : TCP Null Scan
+  - `sudo nmap -sN 10.10.125.113`
+
+- <span class="nmap-option">-sF</span> : TCP FIN Scan
+  - `sudo nmap -sF 10.10.125.113`
+
+- <span class="nmap-option">-sX</span> : TCP Xmas Scan
+  - `sudo nmap -sX 10.10.125.113`
+
+- <span class="nmap-option">-sM</span> : TCP Maimon Scan
+  - `sudo nmap -sM 10.10.125.113`
+
+- <span class="nmap-option">-sA</span> : TCP ACK Scan
+  - `sudo nmap -sA 10.10.125.113`
+
+- <span class="nmap-option">-sW</span> : TCP Window Scan
+  - `sudo nmap -sW 10.10.125.113`
+
+- <span class="nmap-option">--scanflags &lt;flags&gt;</span> : Scan TCP
+  personnalisé avec flags spécifiques
+  - `sudo nmap --scanflags URGACKPSHRSTSYNFIN 10.10.125.113`
+
+### 🥷 Scans avancés et évasion
+
+- <span class="nmap-option">-S &lt;IP&gt;</span> : Spoofed Source IP (usurpation
+  d'adresse IP source)
+  - `sudo nmap -S SPOOFED_IP 10.10.125.113`
+
+- <span class="nmap-option">--spoof-mac &lt;MAC&gt;</span> : Spoofed MAC Address
+  (usurpation d'adresse MAC)
+  - `--spoof-mac SPOOFED_MAC`
+
+- <span class="nmap-option">-D &lt;IPs&gt;</span> : Decoy Scan (scan avec
+  leurres)
+  - `nmap -D DECOY_IP,ME 10.10.125.113`
+
+- <span class="nmap-option">-sI &lt;IP&gt;</span> : Idle (Zombie) Scan
+  - `sudo nmap -sI ZOMBIE_IP 10.10.125.113`
+
+- <span class="nmap-option">-f</span> : Fragmente les données IP en 8 bytes
+
+- <span class="nmap-option">-ff</span> : Fragmente les données IP en 16 bytes
+
+### ⚙️ Options avancées de scan
+
+- <span class="nmap-option">--source-port &lt;PORT&gt;</span> : Spécifie le
+  numéro de port source
+
+- <span class="nmap-option">--data-length &lt;NUM&gt;</span> : Ajoute des
+  données aléatoires pour atteindre une longueur donnée
+
+## 4. 🔬 Détection de services et OS
+
+### 🔍 Détection de version de service
+
+- <span class="nmap-option">-sV</span> : Détermine les informations de
+  service/version sur les ports ouverts
+
+- <span class="nmap-option">-sV --version-light</span> : Essaie les sondes les
+  plus probables (2)
+
+- <span class="nmap-option">-sV --version-all</span> : Essaie toutes les sondes
+  disponibles (9)
+
+### 💻 Détection d'OS
+
+- <span class="nmap-option">-O</span> : Détecte le système d'exploitation
+
+### 🎯 Options combinées
+
+- <span class="nmap-option">-A</span> : Équivalent à `-sV -O -sC --traceroute`
+  (détection OS, version de service, scripts par défaut et traceroute)
+
+## 5. ⏱️ Timing et performance
+
+### ⚡ Templates de timing
+
+- <span class="nmap-option">-T&lt;0-5&gt;</span> : Template de timing
+  - <span class="nmap-option">-T0</span> : Paranoid (paranoïaque)
+
+  - <span class="nmap-option">-T1</span> : Sneaky (furtif)
+
+  - <span class="nmap-option">-T2</span> : Polite (poli)
+
+  - <span class="nmap-option">-T3</span> : Normal (normal) - par défaut
+
+  - <span class="nmap-option">-T4</span> : Aggressive (agressif)
+
+  - <span class="nmap-option">-T5</span> : Insane (insensé)
+
+### 🔄 Options de parallélisme
+
+- <span class="nmap-option">--min-parallelism &lt;numprobes&gt;</span> : Nombre
+  minimum de sondes parallèles
+
+- <span class="nmap-option">--max-parallelism &lt;numprobes&gt;</span> : Nombre
+  maximum de sondes parallèles
+
+### 📊 Options de taux
+
+- <span class="nmap-option">--min-rate &lt;number&gt;</span> : Taux minimum
+  (paquets/seconde)
+
+- <span class="nmap-option">--max-rate &lt;number&gt;</span> : Taux maximum
+  (paquets/seconde)
+
+### ⏳ Timeouts
+
+- <span class="nmap-option">--host-timeout &lt;time&gt;</span> : Temps maximum
+  d'attente pour un hôte cible
+
+## 6. 📜 Scripts et traçage
+
+### 🔧 Scripts NSE (Nmap Scripting Engine)
+
+- <span class="nmap-option">-sC</span> : Exécute les scripts par défaut
+
+- <span class="nmap-option">--script=default</span> : Équivalent à `-sC`
+
+- <span class="nmap-option">--script=&lt;SCRIPTS&gt;</span> : Exécute des
+  scripts Nmap spécifiques
+  - `--script=SCRIPTS`
+
+### 🗺️ Traceroute
+
+- <span class="nmap-option">--traceroute</span> : Exécute un traceroute vers la
+  cible
+
+## 7. 💾 Options de sortie
+
+- <span class="nmap-option">-oN &lt;filename&gt;</span> : Sauvegarde la sortie
+  au format normal
+
+- <span class="nmap-option">-oX &lt;filename&gt;</span> : Sauvegarde la sortie
+  au format XML
+
+- <span class="nmap-option">-oG &lt;filename&gt;</span> : Sauvegarde la sortie
+  au format grep-able (recherchable)
+
+- <span class="nmap-option">-oA &lt;basename&gt;</span> : Sauvegarde la sortie
+  dans tous les formats majeurs (normal, XML, grep-able)
+
+## 8. 🐛 Verbosité et débogage
+
+### 📢 Niveaux de verbosité
+
+- <span class="nmap-option">-v</span> : Verbose (verbeux)
+
+- <span class="nmap-option">-vv</span> : Very verbose (très verbeux)
+
+- <span class="nmap-option">-v4</span> : Niveau de verbosité 4
+
+### 🔍 Niveaux de débogage
+
+- <span class="nmap-option">-d</span> : Debugging (débogage)
+
+- <span class="nmap-option">-dd</span> : Plus de détails pour le débogage
+
+- <span class="nmap-option">-d9</span> : Niveau de débogage 9
+
+### ℹ️ Options d'information
+
+- <span class="nmap-option">--reason</span> : Explique comment Nmap a fait sa
+  conclusion
+
+## ⚠️ Notes importantes
+
+- Les scans Null, FIN et Xmas provoquent une réponse des ports fermés
+
+- Les scans Maimon, ACK et Window provoquent une réponse des ports ouverts et fermés
+
+- Ajouter `-sn` si vous êtes uniquement intéressé par la découverte d'hôtes sans scan de ports
+
+- Omettre `-sn` fera que Nmap effectuera par défaut un scan de ports sur les hôtes vivants
+
+---

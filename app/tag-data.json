@@ -1,5 +1,6 @@
 {
   "port-enumeration": 3,
+  "nmap": 11,
   "malicious-file-upload": 1,
   "backup-file-exposure": 2,
   "credential-cracking": 3,

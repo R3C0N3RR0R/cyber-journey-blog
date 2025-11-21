@@ -1,7 +1,14 @@
 ---
 title: "CodeTwo - Hack The Box"
 date: "2025-08-22"
-tags: ["remote-code-execution", "privilege-escalation", "MD5", "sudo-exploit"]
+tags:
+  [
+    "nmap",
+    "remote-code-execution",
+    "privilege-escalation",
+    "MD5",
+    "sudo-exploit",
+  ]
 draft: false
 summary: >-
   Machine Linux sur Hack The Box exploitant une vulnérabilité js2py pour RCE,
@@ -179,7 +186,7 @@ var subs = c.__subclasses__();
 La classe `catch_warnings` (index 139) est particulièrement intéressante car :
 
 1. **Accès aux modules** : Son instance contient `_module` qui référence le module warnings
-2. **Accès à **builtins**** : Via `_module.__builtins__`, on accède aux fonctions built-in de Python
+2. **Accès à **builtins\*\*\*\* : Via `_module.__builtins__`, on accède aux fonctions built-in de Python
 3. **Import dynamique** : `__builtins__["__import__"]` permet d'importer n'importe quel module Python
 
 ### Le chemin vers l'exécution de commandes
